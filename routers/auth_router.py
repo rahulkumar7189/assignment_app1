@@ -8,22 +8,31 @@ router = APIRouter(tags=["authentication"])
 
 @router.post("/register", response_model=schemas.UserOut)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    hashed_pwd = auth.get_password_hash(user.password)
-    new_user = models.User(
-        name=user.name,
-        email=user.email,
-        hashed_password=hashed_pwd,
-        role=user.role,
-        phone_number=user.phone_number
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+    import traceback
+    try:
+        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        hashed_pwd = auth.get_password_hash(user.password)
+        new_user = models.User(
+            name=user.name,
+            email=user.email,
+            hashed_password=hashed_pwd,
+            role=user.role,
+            phone_number=user.phone_number
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Registration error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 @router.post("/login", response_model=schemas.Token)
 def login(user_credentials: schemas.UserLogin, response: Response, db: Session = Depends(database.get_db)):
