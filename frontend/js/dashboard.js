@@ -115,6 +115,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         socket = io('https://assignment-app1-gdya.onrender.com');
         socket.on('new_message', (data) => {
+            // Skip own messages (already appended locally on send)
+            if (data.sender_id === user.id) return;
             if (data.request_id === currentChatId) appendMessage(data, user.id);
         });
 
@@ -403,12 +405,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!content || !currentChatId) return;
             const userStr = localStorage.getItem('user');
             const user = userStr ? JSON.parse(userStr) : null;
-            socket.emit('send_message', {
-                request_id: currentChatId,
-                sender_id: user?.id,
-                content: content
-            });
+
+            // Immediately show the message in the UI
+            appendMessage({ sender_id: user?.id, content: content }, user?.id);
             document.getElementById('chatInput').value = '';
+
+            // Save message via REST API (reliable)
+            const saved = await apiFetch(`/requests/${currentChatId}/messages`, {
+                method: 'POST',
+                body: { content: content }
+            });
+
+            // Also emit via Socket.IO for real-time delivery to the other user
+            try {
+                if (socket && socket.connected) {
+                    socket.emit('send_message', {
+                        request_id: currentChatId,
+                        sender_id: user?.id,
+                        content: content
+                    });
+                }
+            } catch (e) {
+                console.log('Socket.IO emit failed (non-critical):', e);
+            }
         });
     }
 
