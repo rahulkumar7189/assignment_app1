@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | AcadMate</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body class="admin-body">
+    <div class="admin-wrapper">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-graduation-cap"></i> AcadMate <span>Admin</span>
+                </a>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-section="overview">
+                    <i class="fas fa-chart-line"></i> Overview
+                </a>
+                <a href="#" class="nav-item" data-section="users">
+                    <i class="fas fa-users"></i> User Management
+                </a>
+                <a href="#" class="nav-item" data-section="requests">
+                    <i class="fas fa-file-invoice"></i> Request Monitoring
+                </a>
+                <a href="#" class="nav-item" data-section="analytics">
+                    <i class="fas fa-chart-bar"></i> Analytics
+                </a>
+                <a href="#" class="nav-item" data-section="logs">
+                    <i class="fas fa-history"></i> Activity Logs
+                </a>
+                <a href="#" class="nav-item" data-section="settings">
+                    <i class="fas fa-cog"></i> System Settings
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="logoutBtn" class="btn btn-outline btn-block">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+                <div class="theme-toggle">
+                    <i class="fas fa-moon"></i> Dark Mode
+                    <input type="checkbox" id="darkModeToggle">
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="content">
+            <header class="content-header">
+                <div class="header-left">
+                    <h1 id="sectionTitle">Dashboard Overview</h1>
+                </div>
+                <div class="header-right">
+                    <div class="admin-profile">
+                        <img src="https://ui-avatars.com/api/?name=Admin&background=4f46e5&color=fff" alt="Admin">
+                        <span id="adminName">Admin User</span>
+                    </div>
+                </div>
+            </header>
+
+            <div id="dynamicContent" class="dynamic-content">
+                <!-- Overview Section -->
+                <section id="overview" class="section active">
+                    <div class="stats-grid">
+                        <div class="stat-card clickable" data-section="users" id="cardTotalUsers">
+                            <div class="stat-icon blue"><i class="fas fa-users"></i></div>
+                            <div class="stat-info">
+                                <h3>Total Users</h3>
+                                <p id="statTotalUsers">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card clickable" data-section="users" id="cardHelpers">
+                            <div class="stat-icon green"><i class="fas fa-user-graduate"></i></div>
+                            <div class="stat-info">
+                                <h3>Active Helpers</h3>
+                                <p id="statHelpers">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card clickable" data-section="requests" id="cardRequests">
+                            <div class="stat-icon orange"><i class="fas fa-tasks"></i></div>
+                            <div class="stat-info">
+                                <h3>Active Requests</h3>
+                                <p id="statRequests">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card" id="cardRevenue">
+                            <div class="stat-icon indigo"><i class="fas fa-rupee-sign"></i></div>
+                            <div class="stat-info">
+                                <h3>Revenue</h3>
+                                <p id="statRevenue">₹0.00</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="grid-card recent-activity">
+                            <div class="card-header">
+                                <h2>Recent System Logs</h2>
+                                <button class="btn btn-sm btn-outline">View All</button>
+                            </div>
+                            <div class="activity-list" id="recentLogs">
+                                <!-- Logs will be injected here -->
+                                <p class="loading">Loading logs...</p>
+                            </div>
+                        </div>
+                        <div class="grid-card quick-actions">
+                            <div class="card-header">
+                                <h2>Quick Actions</h2>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary btn-block"><i class="fas fa-plus"></i> Broadcast
+                                    Message</button>
+                                <button class="btn btn-outline btn-block"><i class="fas fa-user-plus"></i> Manual
+                                    Verification</button>
+                                <button class="btn btn-outline btn-block"><i class="fas fa-download"></i> Export
+                                    Analytics</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Users Section -->
+                <section id="users" class="section">
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h2>Users Repository</h2>
+                            <div class="filters">
+                                <select id="roleFilter">
+                                    <option value="">All Roles</option>
+                                    <option value="student">Student</option>
+                                    <option value="helper">Helper</option>
+                                </select>
+                            </div>
+                        </div>
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- Data will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Requests Section -->
+                <section id="requests" class="section">
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h2>Service Requests</h2>
+                            <div class="filters">
+                                <select id="requestStatusFilter">
+                                    <option value="">All Status</option>
+                                    <option value="open">Open</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Subject</th>
+                                    <th>Student</th>
+                                    <th>Helper</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requestsTableBody">
+                                <tr>
+                                    <td colspan="6" class="loading">Feature coming soon...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Analytics Section -->
+                <section id="analytics" class="section">
+                    <div class="dashboard-grid">
+                        <div class="grid-card">
+                            <div class="card-header">
+                                <h2>Registration Trends</h2>
+                            </div>
+                            <div
+                                style="height: 200px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; border-radius: 8px;">
+                                <p>Interactive Chart Placeholder</p>
+                            </div>
+                        </div>
+                        <div class="grid-card">
+                            <div class="card-header">
+                                <h2>Popular Subjects</h2>
+                            </div>
+                            <div id="popularSubjects" class="activity-list">
+                                <p class="loading">Loading analytics...</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Logs Section -->
+                <section id="logs" class="section">
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h2>Full Activity Logs</h2>
+                        </div>
+                        <div id="logsList" style="padding: 1.5rem; max-height: 500px; overflow-y: auto;">
+                            <!-- Full logs will be injected here -->
+                            <p class="loading">Loading system logs...</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Settings Section -->
+                <section id="settings" class="section">
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label>Allowed Email Domain</label>
+                            <input type="text" id="settingEmailDomain" placeholder="cvru.ac.in">
+                        </div>
+                        <div class="form-group">
+                            <label>Commission Percentage (%)</label>
+                            <input type="number" id="settingCommission" value="10">
+                        </div>
+                        <div class="form-group">
+                            <label>Platform Notice</label>
+                            <textarea id="settingNotice" rows="3"></textarea>
+                        </div>
+                        <button id="saveSettings" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/admin.js" type="module"></script>
+</body>
+
+</html>
