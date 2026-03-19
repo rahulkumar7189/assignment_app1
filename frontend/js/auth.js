@@ -1,4 +1,4 @@
-const API_URL = "https://acadmate-1-scbk.onrender.com/api/v1";
+const API_URL = "https://assignment-app1-gdya.onrender.com/api/v1";
 
 // Redirect logged-in users away from auth pages
 const currentPath = window.location.pathname;

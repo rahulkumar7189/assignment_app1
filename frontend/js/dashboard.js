@@ -5,7 +5,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const API_BASE_URL = 'https://localhost:8000/api/v1';
+    const API_BASE_URL = 'https://assignment-app1-gdya.onrender.com/api/v1';
     let socket;
     let currentChatId = null;
 
@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchHelperHistory();
         }
 
-        socket = io('https://acadmate-1-scbk.onrender.com');
+        socket = io('https://assignment-app1-gdya.onrender.com');
         socket.on('new_message', (data) => {
             if (data.request_id === currentChatId) appendMessage(data, user.id);
         });
@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!attachments || attachments.length === 0) return '';
         const links = attachments.map((path, index) => {
             const fileName = path.split('/').pop();
-            return `<a href="https://acadmate-1-scbk.onrender.com${path}" target="_blank" class="attachment-link"><i class="fas fa-file-alt"></i> ${fileName}</a>`;
+            return `<a href="https://assignment-app1-gdya.onrender.com${path}" target="_blank" class="attachment-link"><i class="fas fa-file-alt"></i> ${fileName}</a>`;
         }).join('');
         return `<div class="attachments-section"><p><strong>Attachments:</strong></p><div class="attachment-grid">${links}</div></div>`;
     }
@@ -418,7 +418,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Logout
 async function logout() {
     try {
-        await fetch('https://acadmate-1-scbk.onrender.com/api/v1/auth/logout', { method: 'POST' });
+        await fetch('https://assignment-app1-gdya.onrender.com/api/v1/auth/logout', { method: 'POST' });
     } catch (e) { }
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');

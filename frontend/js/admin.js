@@ -4,7 +4,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const API_BASE_URL = 'https://localhost:8000/api/v1';
+    const API_BASE_URL = 'https://assignment-app1-gdya.onrender.com/api/v1';
 
     // Initial Session Validation
     async function validateSession() {
