@@ -75,20 +75,7 @@ async def join_room(sid, data):
 
 @sio.event
 async def send_message(sid, data):
-    db = database.SessionLocal()
-    try:
-        new_msg = models.Message(
-            request_id=data['request_id'],
-            sender_id=data['sender_id'],
-            content=data['content']
-        )
-        db.add(new_msg)
-        db.commit()
-    except Exception as e:
-        print(f"Error saving message: {e}")
-    finally:
-        db.close()
-    
+    # Message is already persisted via REST API — just relay to the room
     await sio.emit('new_message', data, room=str(data['request_id']))
 
 # Run with: uvicorn main:socket_app --reload --port 8000

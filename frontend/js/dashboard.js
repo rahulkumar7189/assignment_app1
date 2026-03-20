@@ -450,7 +450,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Clear inputs immediately
             document.getElementById('chatInput').value = '';
             if (chatFileInput) chatFileInput.value = '';
-            chatFilePreview.style.display = 'none';
+            if (chatFilePreview) chatFilePreview.style.display = 'none';
 
             if (file) {
                 // File upload path: use FormData to /messages/upload
