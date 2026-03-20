@@ -350,6 +350,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.hideChatList = () => document.getElementById('chatListModal').style.display = 'none';
 
+    const BASE_URL_ROOT = 'https://assignment-app1-gdya.onrender.com';
+    const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+
+    function renderAttachmentInChat(attachmentPath, isMe) {
+        if (!attachmentPath) return '';
+        const ext = attachmentPath.substring(attachmentPath.lastIndexOf('.')).toLowerCase();
+        const fullUrl = `${BASE_URL_ROOT}${attachmentPath}`;
+        const fileName = attachmentPath.split('/').pop();
+        if (IMAGE_EXTS.includes(ext)) {
+            return `<div class="chat-msg-attachment"><img src="${fullUrl}" alt="image" onclick="window.open('${fullUrl}','_blank')"></div>`;
+        }
+        const linkClass = isMe ? 'sent' : 'received';
+        return `<div class="chat-msg-attachment"><a href="${fullUrl}" target="_blank" class="chat-file-link ${linkClass}"><i class="fas fa-file-alt"></i> ${fileName}</a></div>`;
+    }
+
     function appendMessage(msg, currentUserId) {
         const list = document.getElementById('messageList');
         if (!list) return;
@@ -357,10 +372,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isMe = msg.sender_id === currentUserId;
         div.style.textAlign = isMe ? 'right' : 'left';
         div.style.margin = '0.5rem 0';
+        const contentHtml = msg.content ? msg.content : '';
+        const attachHtml = renderAttachmentInChat(msg.attachment, isMe);
         div.innerHTML = `
             <div style="display: inline-block; padding: 0.5rem 1rem; border-radius: 12px; background: ${isMe ? 'var(--primary)' : '#f1f5f9'}; color: ${isMe ? '#fff' : 'var(--text-dark)'}; max-width: 80%; text-align: left;">
                 <div style="font-size: 0.7rem; opacity: 0.8; margin-bottom: 0.2rem;">${isMe ? 'Me' : 'Peer'}</div>
-                ${msg.content}
+                ${contentHtml}
+                ${attachHtml}
             </div>
         `;
         list.appendChild(div);
@@ -397,36 +415,90 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Chat File Attachment Wiring ---
+    const chatAttachBtn = document.getElementById('chatAttachBtn');
+    const chatFileInput = document.getElementById('chatFileInput');
+    const chatFilePreview = document.getElementById('chatFilePreview');
+    const chatFileName = document.getElementById('chatFileName');
+    const chatFileRemove = document.getElementById('chatFileRemove');
+
+    if (chatAttachBtn && chatFileInput) {
+        chatAttachBtn.addEventListener('click', () => chatFileInput.click());
+        chatFileInput.addEventListener('change', () => {
+            if (chatFileInput.files.length > 0) {
+                chatFileName.textContent = chatFileInput.files[0].name;
+                chatFilePreview.style.display = 'block';
+            }
+        });
+        chatFileRemove.addEventListener('click', () => {
+            chatFileInput.value = '';
+            chatFilePreview.style.display = 'none';
+        });
+    }
+
     const chatForm = document.getElementById('chatForm');
     if (chatForm) {
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const content = document.getElementById('chatInput').value;
-            if (!content || !currentChatId) return;
+            const content = document.getElementById('chatInput').value.trim();
+            const file = chatFileInput?.files?.[0] || null;
+            if (!content && !file) return;
+            if (!currentChatId) return;
             const userStr = localStorage.getItem('user');
             const user = userStr ? JSON.parse(userStr) : null;
 
-            // Immediately show the message in the UI
-            appendMessage({ sender_id: user?.id, content: content }, user?.id);
+            // Clear inputs immediately
             document.getElementById('chatInput').value = '';
+            if (chatFileInput) chatFileInput.value = '';
+            chatFilePreview.style.display = 'none';
 
-            // Save message via REST API (reliable)
-            const saved = await apiFetch(`/requests/${currentChatId}/messages`, {
-                method: 'POST',
-                body: { content: content }
-            });
+            if (file) {
+                // File upload path: use FormData to /messages/upload
+                const formData = new FormData();
+                formData.append('file', file);
+                if (content) formData.append('content', content);
 
-            // Also emit via Socket.IO for real-time delivery to the other user
-            try {
-                if (socket && socket.connected) {
-                    socket.emit('send_message', {
-                        request_id: currentChatId,
-                        sender_id: user?.id,
-                        content: content
-                    });
+                const saved = await apiFetch(`/requests/${currentChatId}/messages/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (saved) {
+                    appendMessage(saved, user?.id);
+                    // Notify peer via Socket.IO
+                    try {
+                        if (socket && socket.connected) {
+                            socket.emit('send_message', {
+                                request_id: currentChatId,
+                                sender_id: user?.id,
+                                content: saved.content,
+                                attachment: saved.attachment
+                            });
+                        }
+                    } catch (err) {
+                        console.log('Socket.IO emit failed (non-critical):', err);
+                    }
                 }
-            } catch (e) {
-                console.log('Socket.IO emit failed (non-critical):', e);
+            } else {
+                // Text-only message (original path)
+                appendMessage({ sender_id: user?.id, content: content }, user?.id);
+
+                const saved = await apiFetch(`/requests/${currentChatId}/messages`, {
+                    method: 'POST',
+                    body: { content: content }
+                });
+
+                try {
+                    if (socket && socket.connected) {
+                        socket.emit('send_message', {
+                            request_id: currentChatId,
+                            sender_id: user?.id,
+                            content: content
+                        });
+                    }
+                } catch (err) {
+                    console.log('Socket.IO emit failed (non-critical):', err);
+                }
             }
         });
     }

@@ -62,7 +62,8 @@ class Message(Base):
     id = Column(Integer, primary_key=True, index=True)
     request_id = Column(Integer, ForeignKey("help_requests.id"))
     sender_id = Column(Integer, ForeignKey("users.id"))
-    content = Column(Text)
+    content = Column(Text, nullable=True)
+    attachment = Column(String, nullable=True)  # file path for uploaded attachment
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
     request = relationship("HelpRequest", back_populates="messages")

@@ -29,6 +29,9 @@ def _initialize_database() -> None:
 # Create DB tables
 _initialize_database()
 
+# Ensure upload directories exist
+os.makedirs("uploads/chat", exist_ok=True)
+
 app = FastAPI(title="AcadMate API")
 
 # Configure CORS

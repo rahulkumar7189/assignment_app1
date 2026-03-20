@@ -105,19 +105,20 @@ class HelpRequestOut(HelpRequestBase):
         from_attributes = True
 
 class MessageBase(BaseModel):
-    content: str
+    content: Optional[str] = None
 
 class MessageCreate(MessageBase):
     request_id: int
 
-class MessageOut(MessageBase):
+class MessageOut(BaseModel):
     id: int
     request_id: int
     sender_id: int
+    content: Optional[str] = None
+    attachment: Optional[str] = None
     timestamp: datetime
 
     class Config:
-        from_attributes = True
         from_attributes = True
 
 class ReviewCreate(BaseModel):

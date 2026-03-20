@@ -134,8 +134,19 @@
                 style="flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;">
                 <!-- Messages will be injected here -->
             </div>
-            <form id="chatForm" style="display: flex; gap: 0.5rem;">
-                <input type="text" id="chatInput" class="form-input" placeholder="Type your message..." required>
+            <div id="chatFilePreview" class="chat-file-preview" style="display: none;">
+                <div class="chat-file-preview-inner">
+                    <i class="fas fa-file"></i>
+                    <span id="chatFileName"></span>
+                    <button type="button" id="chatFileRemove" class="chat-file-remove" title="Remove file">&times;</button>
+                </div>
+            </div>
+            <form id="chatForm" style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="file" id="chatFileInput" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.txt,.ppt,.pptx,.xls,.xlsx" style="display: none;">
+                <button type="button" id="chatAttachBtn" class="chat-attach-btn" title="Attach file">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <input type="text" id="chatInput" class="form-input" placeholder="Type your message..." style="flex: 1;">
                 <button type="submit" class="btn btn-primary">Send</button>
             </form>
         </div>
