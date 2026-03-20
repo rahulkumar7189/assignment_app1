@@ -32,10 +32,10 @@ _initialize_database()
 # Ensure upload directories exist
 os.makedirs("uploads/chat", exist_ok=True)
 
-app = FastAPI(title="AcadMate API")
+fastapi_app = FastAPI(title="AcadMate API")
 
 # Configure CORS
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://acadmate-xi.vercel.app",
@@ -50,20 +50,20 @@ app.add_middleware(
 )
 
 # Mount uploads directory
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+fastapi_app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Include Routers with /api/v1 prefix
-app.include_router(auth_router.router, prefix="/api/v1/auth")
-app.include_router(users_router.router, prefix="/api/v1/users")
-app.include_router(requests_router.router, prefix="/api/v1")
-app.include_router(messages_router.router, prefix="/api/v1")
-app.include_router(admin_router.admin_router, prefix="/api/v1")
+fastapi_app.include_router(auth_router.router, prefix="/api/v1/auth")
+fastapi_app.include_router(users_router.router, prefix="/api/v1/users")
+fastapi_app.include_router(requests_router.router, prefix="/api/v1")
+fastapi_app.include_router(messages_router.router, prefix="/api/v1")
+fastapi_app.include_router(admin_router.admin_router, prefix="/api/v1")
 
-# Socket.io setup
+# Socket.io setup — wraps FastAPI so `/socket.io/` is handled
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
-socket_app = socketio.ASGIApp(sio, app)
+app = socketio.ASGIApp(sio, fastapi_app)
 
-@app.get("/")
+@fastapi_app.get("/")
 def read_root():
     return {"message": "Welcome to AcadMate API", "status": "running"}
 
@@ -78,4 +78,4 @@ async def send_message(sid, data):
     # Message is already persisted via REST API — just relay to the room
     await sio.emit('new_message', data, room=str(data['request_id']))
 
-# Run with: uvicorn main:socket_app --reload --port 8000
+# Run with: uvicorn main:app --reload --port 8000
