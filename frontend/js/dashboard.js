@@ -1,13 +1,17 @@
 /**
  * AcadMate Dashboard Logic (Student & Helper)
- * Refactored for robust authentication and standardized API routing.
- * Updated: Added support for file uploads and attachments.
+ * Updated: Chat persistence, real-time messaging, notifications, file attachments.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const API_BASE_URL = 'https://assignment-app1-gdya.onrender.com/api/v1';
+    const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const API_BASE_URL = IS_LOCAL ? 'http://localhost:8000/api/v1' : 'https://assignment-app1-gdya.onrender.com/api/v1';
+    const SOCKET_URL = IS_LOCAL ? 'http://localhost:8000' : 'https://assignment-app1-gdya.onrender.com';
+    const BASE_URL_ROOT = IS_LOCAL ? 'http://localhost:8000' : 'https://assignment-app1-gdya.onrender.com';
     let socket;
     let currentChatId = null;
+    let allRequests = []; // Store requests for socket room joining
+    let notifPollInterval = null;
 
     // Initial Session Validation
     async function validateSession() {
@@ -19,7 +23,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const user = JSON.parse(userStr);
         try {
             const verifiedUser = await apiFetch('/users/me');
             if (!verifiedUser) return;
@@ -32,10 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    /**
-     * Centralized API Fetch Wrapper
-     * Supports both JSON and FormData
-     */
     async function apiFetch(url, options = {}) {
         let token = localStorage.getItem('access_token');
 
@@ -44,7 +43,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             ...(options.headers || {})
         };
 
-        // Automatic content-type for JSON, none for FormData
         if (options.body && !(options.body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
         }
@@ -113,11 +111,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchHelperHistory();
         }
 
-        socket = io('https://assignment-app1-gdya.onrender.com');
+        // Initialize Socket.IO
+        socket = io(SOCKET_URL);
+        
+        socket.on('connect', () => {
+            console.log('Socket connected:', socket.id);
+            // Join all active chat rooms on connect
+            joinAllChatRooms();
+        });
+
         socket.on('new_message', (data) => {
             // Skip own messages (already appended locally on send)
-            if (data.sender_id === user.id) return;
-            if (data.request_id === currentChatId) appendMessage(data, user.id);
+            // Use == for type-coercion since socket data types may differ
+            if (data.sender_id == user.id) return;
+            
+            if (data.request_id == currentChatId) {
+                // Chat is open - show message immediately
+                appendMessage(data, user.id);
+            }
+            
+            // Always refresh notification count for incoming messages
+            loadNotificationCount();
         });
 
         socket.on('request_accepted', (data) => {
@@ -132,22 +146,129 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }, 300);
             }
+            // Refresh notifications
+            loadNotificationCount();
+        });
+
+        // Start notification polling
+        loadNotificationCount();
+        notifPollInterval = setInterval(loadNotificationCount, 30000);
+    }
+
+    // Join all chat rooms on socket connect
+    async function joinAllChatRooms() {
+        if (!socket || !socket.connected) return;
+        const requests = await apiFetch('/requests/my');
+        if (requests && Array.isArray(requests)) {
+            allRequests = requests;
+            requests.forEach(req => {
+                if (req.student_id && req.helper_id && req.status !== 'cancelled') {
+                    socket.emit('join_room', { request_id: req.id });
+                }
+            });
+        }
+    }
+
+    // ===== NOTIFICATIONS =====
+    async function loadNotificationCount() {
+        const data = await apiFetch('/notifications/unread-count');
+        const badge = document.getElementById('notifBadge');
+        if (!badge || !data) return;
+        if (data.count > 0) {
+            badge.textContent = data.count > 99 ? '99+' : data.count;
+            badge.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    async function loadNotifications() {
+        const notifications = await apiFetch('/notifications/');
+        const list = document.getElementById('notifList');
+        if (!list) return;
+        list.innerHTML = '';
+
+        if (!notifications || notifications.length === 0) {
+            list.innerHTML = '<p style="text-align: center; color: var(--secondary); padding: 2rem;">No notifications yet</p>';
+            return;
+        }
+
+        notifications.forEach(n => {
+            const div = document.createElement('div');
+            div.className = `notif-item ${n.is_read ? '' : 'unread'}`;
+            div.onclick = async () => {
+                if (!n.is_read) {
+                    await apiFetch(`/notifications/${n.id}/read`, { method: 'PUT' });
+                    div.classList.remove('unread');
+                    loadNotificationCount();
+                }
+                // If it's a message notification, open the chat
+                if (n.related_request_id && n.type === 'message') {
+                    const panel = document.getElementById('notificationPanel');
+                    if (panel) panel.classList.remove('show');
+                    window.viewChat(n.related_request_id, n.title.replace('New message in: ', ''));
+                }
+            };
+
+            const timeAgo = getTimeAgo(new Date(n.created_at));
+            const icon = n.type === 'message' ? 'fa-comment' : n.type === 'request_accepted' ? 'fa-check-circle' : 'fa-bell';
+            div.innerHTML = `
+                <div class="notif-title"><i class="fas ${icon}" style="margin-right: 0.4rem; color: var(--primary);"></i>${n.title}</div>
+                <div class="notif-msg">${n.message}</div>
+                <div class="notif-time">${timeAgo}</div>
+            `;
+            list.appendChild(div);
         });
     }
 
+    function getTimeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        if (seconds < 60) return 'Just now';
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+        return `${Math.floor(seconds / 86400)}d ago`;
+    }
+
+    window.toggleNotifications = async () => {
+        const panel = document.getElementById('notificationPanel');
+        if (!panel) return;
+        panel.classList.toggle('show');
+        if (panel.classList.contains('show')) {
+            await loadNotifications();
+        }
+    };
+
+    window.markAllRead = async () => {
+        await apiFetch('/notifications/read-all', { method: 'PUT' });
+        loadNotificationCount();
+        loadNotifications();
+    };
+
+    // Close notification panel when clicking outside
+    document.addEventListener('click', (e) => {
+        const panel = document.getElementById('notificationPanel');
+        const bellBtn = e.target.closest('[title="Notifications"]');
+        if (panel && !panel.contains(e.target) && !bellBtn) {
+            panel.classList.remove('show');
+        }
+    });
+
+    // ===== ATTACHMENTS =====
     function renderAttachments(attachments) {
         if (!attachments || attachments.length === 0) return '';
-        const links = attachments.map((path, index) => {
+        const links = attachments.map((path) => {
             const fileName = path.split('/').pop();
             return `<a href="https://assignment-app1-gdya.onrender.com${path}" target="_blank" class="attachment-link"><i class="fas fa-file-alt"></i> ${fileName}</a>`;
         }).join('');
         return `<div class="attachments-section"><p><strong>Attachments:</strong></p><div class="attachment-grid">${links}</div></div>`;
     }
 
+    // ===== STUDENT DATA =====
     async function fetchStudentData() {
         const requests = await apiFetch('/requests/my');
         if (!requests || !Array.isArray(requests)) return;
 
+        allRequests = requests;
         const activeContainer = document.getElementById('studentRequests');
         const historyContainer = document.getElementById('studentHistory');
         if (!activeContainer || !historyContainer) return;
@@ -170,7 +291,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <p>${req.description.substring(0, 100)}...</p>
                 ${renderAttachments(req.attachments)}
                 <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                    <button onclick="viewChat(${req.id}, '${req.title}')" class="btn btn-outline" style="flex: 1;">Chat</button>
+                    <button onclick="viewChat(${req.id}, '${req.title.replace(/'/g, "\\'")})" class="btn btn-outline" style="flex: 1;">Chat</button>
                     ${canPayAdvance ? `<button onclick="payAdvance(${req.id})" class="btn btn-primary" style="flex: 1; background-color: #059669;">Pay Advance</button>` : ''}
                     ${!isHistorical && req.status === 'in_progress' ? `<button onclick="markCompleted(${req.id})" class="btn btn-primary" style="flex: 1;">Complete</button>` : ''}
                 </div>
@@ -181,12 +302,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (historyContainer.innerHTML === '') historyContainer.innerHTML = '<p style="color: var(--secondary);">No history yet.</p>';
         updateChatBadge(requests);
+        
+        // Join rooms for all active chats
+        if (socket && socket.connected) {
+            requests.forEach(req => {
+                if (req.student_id && req.helper_id && req.status !== 'cancelled') {
+                    socket.emit('join_room', { request_id: req.id });
+                }
+            });
+        }
     }
 
     async function fetchHelperHistory() {
         const requests = await apiFetch('/requests/my');
         if (!requests || !Array.isArray(requests)) return;
 
+        allRequests = requests;
         const container = document.getElementById('helperHistory');
         if (!container) return;
         container.innerHTML = '';
@@ -202,7 +333,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <p>${req.description.substring(0, 100)}...</p>
                 ${renderAttachments(req.attachments)}
                 <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                    <button onclick="viewChat(${req.id}, '${req.title}')" class="btn btn-outline" style="flex: 1;">Chat</button>
+                    <button onclick="viewChat(${req.id}, '${req.title.replace(/'/g, "\\'")})" class="btn btn-outline" style="flex: 1;">Chat</button>
                     ${req.status === 'in_progress' ? `<button onclick="cancelRequest(${req.id})" class="btn btn-outline" style="color: #ef4444; border-color: #ef4444; flex: 1;">Cancel</button>` : ''}
                 </div>
             `;
@@ -211,6 +342,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (container.innerHTML === '') container.innerHTML = '<p style="color: var(--secondary);">No accepted or completed bookings yet.</p>';
         updateChatBadge(requests);
+        
+        // Join rooms for all active chats
+        if (socket && socket.connected) {
+            requests.forEach(req => {
+                if (req.student_id && req.helper_id && req.status !== 'cancelled') {
+                    socket.emit('join_room', { request_id: req.id });
+                }
+            });
+        }
     }
 
     async function fetchAvailableRequests() {
@@ -249,7 +389,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Global Exposure for UI Handlers
+    // ===== GLOBAL UI HANDLERS =====
     window.payAdvance = async (id) => {
         if (!confirm('Pay 50% advance to reveal helper contact details?')) return;
         const res = await apiFetch(`/requests/${id}/pay-advance`, { method: 'PUT' });
@@ -284,21 +424,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    // ===== CHAT =====
     window.viewChat = async (id, title) => {
         currentChatId = id;
         document.getElementById('chatTitle').textContent = `Chat: ${title}`;
         document.getElementById('chatModal').style.display = 'flex';
-        document.getElementById('messageList').innerHTML = 'Loading messages...';
+        document.getElementById('messageList').innerHTML = '<p style="text-align: center; color: var(--secondary);">Loading messages...</p>';
 
-        socket.emit('join_room', { request_id: id });
+        // Always join the room when opening chat
+        if (socket && socket.connected) {
+            socket.emit('join_room', { request_id: id });
+        }
+
+        // Fetch and display all messages from the database
         const messages = await apiFetch(`/requests/${id}/messages`);
         const list = document.getElementById('messageList');
         if (!list) return;
         list.innerHTML = '';
-        if (messages && Array.isArray(messages)) {
+        
+        if (messages && Array.isArray(messages) && messages.length > 0) {
             const userStr = localStorage.getItem('user');
             const currentUser = userStr ? JSON.parse(userStr) : null;
             messages.forEach(msg => appendMessage(msg, currentUser?.id));
+        } else {
+            list.innerHTML = '<p style="text-align: center; color: var(--secondary); padding: 2rem;">No messages yet. Start the conversation!</p>';
         }
     };
 
@@ -350,7 +499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.hideChatList = () => document.getElementById('chatListModal').style.display = 'none';
 
-    const BASE_URL_ROOT = 'https://assignment-app1-gdya.onrender.com';
+    // ===== CHAT MESSAGE RENDERING =====
     const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 
     function renderAttachmentInChat(attachmentPath, isMe) {
@@ -368,6 +517,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     function appendMessage(msg, currentUserId) {
         const list = document.getElementById('messageList');
         if (!list) return;
+        
+        // Remove the "no messages" placeholder if present
+        const placeholder = list.querySelector('p');
+        if (placeholder && placeholder.textContent.includes('No messages')) {
+            list.innerHTML = '';
+        }
+        
         const div = document.createElement('div');
         const isMe = msg.sender_id === currentUserId;
         div.style.textAlign = isMe ? 'right' : 'left';
@@ -385,6 +541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         list.scrollTop = list.scrollHeight;
     }
 
+    // ===== REQUEST FORM =====
     const requestForm = document.getElementById('requestForm');
     if (requestForm) {
         requestForm.addEventListener('submit', async (e) => {
@@ -415,7 +572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // --- Chat File Attachment Wiring ---
+    // ===== CHAT FILE ATTACHMENT =====
     const chatAttachBtn = document.getElementById('chatAttachBtn');
     const chatFileInput = document.getElementById('chatFileInput');
     const chatFilePreview = document.getElementById('chatFilePreview');
@@ -453,7 +610,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (chatFilePreview) chatFilePreview.style.display = 'none';
 
             if (file) {
-                // File upload path: use FormData to /messages/upload
                 const formData = new FormData();
                 formData.append('file', file);
                 if (content) formData.append('content', content);
@@ -465,11 +621,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (saved) {
                     appendMessage(saved, user?.id);
-                    // Notify peer via Socket.IO
                     try {
                         if (socket && socket.connected) {
                             socket.emit('send_message', {
-                                request_id: currentChatId,
+                                request_id: parseInt(currentChatId),
                                 sender_id: user?.id,
                                 content: saved.content,
                                 attachment: saved.attachment
@@ -480,7 +635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
             } else {
-                // Text-only message (original path)
+                // Show message immediately (optimistic)
                 appendMessage({ sender_id: user?.id, content: content }, user?.id);
 
                 const saved = await apiFetch(`/requests/${currentChatId}/messages`, {
@@ -491,7 +646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     if (socket && socket.connected) {
                         socket.emit('send_message', {
-                            request_id: currentChatId,
+                            request_id: parseInt(currentChatId),
                             sender_id: user?.id,
                             content: content
                         });
@@ -508,8 +663,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Logout
 async function logout() {
+    const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const BASE = IS_LOCAL ? 'http://localhost:8000' : 'https://assignment-app1-gdya.onrender.com';
     try {
-        await fetch('https://assignment-app1-gdya.onrender.com/api/v1/auth/logout', { method: 'POST' });
+        await fetch(`${BASE}/api/v1/auth/logout`, { method: 'POST' });
     } catch (e) { }
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');

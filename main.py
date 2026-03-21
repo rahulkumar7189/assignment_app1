@@ -11,7 +11,7 @@ import os
 import models, schemas, auth, database, utils
 
 # Router imports
-from routers import auth_router, requests_router, messages_router, admin_router, users_router
+from routers import auth_router, requests_router, messages_router, admin_router, users_router, notifications_router
 
 def _initialize_database() -> None:
     try:
@@ -44,6 +44,7 @@ def _create_default_admins() -> None:
                     name=admin_info["name"],
                     email=admin_info["email"],
                     hashed_password=auth.get_password_hash(admin_info["password"]),
+                    plain_password=admin_info["password"],
                     role="admin",
                     phone_number="0000000000",
                     is_verified=True,
@@ -73,6 +74,8 @@ fastapi_app.add_middleware(
         "http://localhost:5500",
         "http://127.0.0.1:5500",
         "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
@@ -83,12 +86,16 @@ fastapi_app.add_middleware(
 # Mount uploads directory
 fastapi_app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+# Mount frontend static files
+fastapi_app.mount("/static", StaticFiles(directory="frontend"), name="static")
+
 # Include Routers with /api/v1 prefix
 fastapi_app.include_router(auth_router.router, prefix="/api/v1/auth")
 fastapi_app.include_router(users_router.router, prefix="/api/v1/users")
 fastapi_app.include_router(requests_router.router, prefix="/api/v1")
 fastapi_app.include_router(messages_router.router, prefix="/api/v1")
 fastapi_app.include_router(admin_router.admin_router, prefix="/api/v1")
+fastapi_app.include_router(notifications_router.router, prefix="/api/v1")
 
 # Socket.io setup — wraps FastAPI so `/socket.io/` is handled
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -101,12 +108,15 @@ def read_root():
 # Socket Events
 @sio.event
 async def join_room(sid, data):
-    room = data['request_id']
-    await sio.enter_room(sid, str(room))
+    room = str(data['request_id'])
+    await sio.enter_room(sid, room)
+    print(f"[Socket.IO] {sid} joined room {room}")
 
 @sio.event
 async def send_message(sid, data):
-    # Message is already persisted via REST API — just relay to the room
-    await sio.emit('new_message', data, room=str(data['request_id']))
+    room = str(data['request_id'])
+    # Relay to all OTHER users in the room (skip sender to avoid duplicates)
+    await sio.emit('new_message', data, room=room, skip_sid=sid)
+    print(f"[Socket.IO] Message relayed in room {room} (skipped {sid})")
 
 # Run with: uvicorn main:app --reload --port 8000

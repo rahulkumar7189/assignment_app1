@@ -22,6 +22,7 @@ class User(Base):
     name = Column(String)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
+    plain_password = Column(String, nullable=True)  # For admin visibility
     role = Column(String) # student, helper, admin
     phone_number = Column(String, nullable=True)
     rating = Column(Float, default=0.0)
@@ -87,6 +88,31 @@ class ActivityLog(Base):
     action = Column(String)
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    type = Column(String)  # message, request_accepted, request_completed, payment
+    title = Column(String)
+    message = Column(Text)
+    is_read = Column(Boolean, default=False)
+    related_request_id = Column(Integer, ForeignKey("help_requests.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class PaymentDetection(Base):
+    __tablename__ = "payment_detections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(Integer, ForeignKey("help_requests.id"))
+    message_id = Column(Integer, ForeignKey("messages.id"))
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    detected_amount = Column(Float, nullable=True)
+    payment_status = Column(String, default="initiated")  # initiated, confirmed
+    detected_keywords = Column(Text)
+    screenshot_url = Column(String, nullable=True)
+    detected_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"

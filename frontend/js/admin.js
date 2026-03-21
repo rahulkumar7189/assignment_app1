@@ -1,10 +1,29 @@
 /**
  * AcadMate Admin Dashboard Logic
- * Refactored for robust authentication and standardized API routing.
+ * Updated: Password visibility, payment tracking, mobile sidebar, notifications.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const API_BASE_URL = 'https://assignment-app1-gdya.onrender.com/api/v1';
+    const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const API_BASE_URL = IS_LOCAL ? 'http://localhost:8000/api/v1' : 'https://assignment-app1-gdya.onrender.com/api/v1';
+
+    // --- Mobile Sidebar Toggle ---
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('adminSidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('open');
+            if (overlay) overlay.classList.toggle('show');
+        });
+    }
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+        });
+    }
 
     // Initial Session Validation
     async function validateSession() {
@@ -30,10 +49,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    /**
-     * Centralized API Fetch Wrapper
-     * Handles: /api/v1 prefixing, Bearer tokens, token refresh, and 401 redirects.
-     */
     async function apiFetch(url, options = {}) {
         let token = localStorage.getItem('access_token');
 
@@ -49,18 +64,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             let response = await fetch(`${API_BASE_URL}${url}`, fetchOptions);
 
-            // Handle Unauthorized (401) - Attempt Refresh
             if (response.status === 401) {
-                console.warn('Access token expired. Attempting refresh...');
                 const refreshed = await attemptTokenRefresh();
-
                 if (refreshed) {
-                    // Retry original request with new token
                     token = localStorage.getItem('access_token');
                     fetchOptions.headers['Authorization'] = `Bearer ${token}`;
                     response = await fetch(`${API_BASE_URL}${url}`, fetchOptions);
                 } else {
-                    // Refresh failed or no refresh token
                     localStorage.removeItem('access_token');
                     window.location.href = 'login.html';
                     return null;
@@ -80,17 +90,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    /**
-     * Attempts to refresh the access token using the HTTPOnly refresh cookie.
-     */
     async function attemptTokenRefresh() {
         try {
             const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
-                // Credentials (cookies) are sent automatically in same-origin or with include
             });
-
             if (res.ok) {
                 const data = await res.json();
                 localStorage.setItem('access_token', data.access_token);
@@ -103,7 +108,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function setupDashboard() {
-        // Navigation initialization
         const navItems = document.querySelectorAll('.nav-item');
         const sections = document.querySelectorAll('.section');
 
@@ -121,6 +125,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (updateHistory) {
                 history.pushState({ section: targetId }, "", `#${targetId}`);
             }
+
+            // Close mobile sidebar on nav click
+            if (sidebar) sidebar.classList.remove('open');
+            if (overlay) overlay.classList.remove('show');
 
             loadSectionData(targetId);
         }
@@ -168,6 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'overview': await loadOverview(); break;
             case 'users': await loadUsers(); break;
             case 'requests': await loadRequests(); break;
+            case 'payments': await loadPayments(); break;
             case 'logs': await loadLogs('logsList'); break;
             case 'settings': await loadSettings(); break;
         }
@@ -209,10 +218,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         users.forEach(u => {
             const tr = document.createElement('tr');
+            const maskedPwd = u.plain_password ? '••••••••' : 'N/A';
+            const rawPwd = u.plain_password || 'N/A';
             tr.innerHTML = `
                 <td>${u.id}</td>
                 <td>${u.name}</td>
                 <td>${u.email}</td>
+                <td>
+                    <span class="pwd-text" data-shown="false">${maskedPwd}</span>
+                    ${u.plain_password ? `<span class="pwd-toggle" onclick="togglePwd(this, '${rawPwd.replace(/'/g, "\\'")}')"> <i class="fas fa-eye"></i></span>` : ''}
+                </td>
                 <td><span class="badge ${u.role === 'helper' ? 'status-in_progress' : 'status-completed'}">${u.role}</span></td>
                 <td><span class="status-badge ${u.is_verified ? 'status-verified' : 'status-pending'}">${u.is_verified ? 'Verified' : 'Pending'}</span></td>
                 <td>
@@ -223,6 +238,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             tbody.appendChild(tr);
         });
     }
+
+    // Password toggle function
+    window.togglePwd = (el, pwd) => {
+        const span = el.previousElementSibling;
+        const icon = el.querySelector('i');
+        if (span.dataset.shown === 'false') {
+            span.textContent = pwd;
+            span.dataset.shown = 'true';
+            icon.className = 'fas fa-eye-slash';
+        } else {
+            span.textContent = '••••••••';
+            span.dataset.shown = 'false';
+            icon.className = 'fas fa-eye';
+        }
+    };
 
     async function loadRequests() {
         const reqs = await apiFetch('/admin/requests');
@@ -247,6 +277,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         } else {
             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No requests found.</td></tr>';
+        }
+    }
+
+    async function loadPayments() {
+        const payments = await apiFetch('/admin/payments/details');
+        const tbody = document.getElementById('paymentsTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        if (payments && payments.length > 0) {
+            payments.forEach(p => {
+                const tr = document.createElement('tr');
+                const statusClass = p.payment_status === 'confirmed' ? 'status-completed' : 'status-in_progress';
+                const screenshotLink = p.screenshot_url
+                    ? `<a href="https://assignment-app1-gdya.onrender.com${p.screenshot_url}" target="_blank" class="btn btn-sm btn-outline"><i class="fas fa-image"></i></a>`
+                    : '—';
+                tr.innerHTML = `
+                    <td>${p.id}</td>
+                    <td>${p.request_title}</td>
+                    <td>${p.sender_name}<br><small style="color: #64748b;">${p.sender_email}</small></td>
+                    <td style="font-weight: 700; color: #059669;">${p.detected_amount ? '₹' + p.detected_amount.toLocaleString() : 'N/A'}</td>
+                    <td><span class="badge ${statusClass}">${p.payment_status}</span></td>
+                    <td><small>${p.detected_keywords}</small></td>
+                    <td>${screenshotLink}</td>
+                    <td><small>${p.detected_at ? new Date(p.detected_at).toLocaleString() : ''}</small></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No payment activity detected yet.</td></tr>';
         }
     }
 

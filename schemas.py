@@ -133,3 +133,44 @@ class ReviewOut(ReviewCreate):
     class Config:
         from_attributes = True
         from_attributes = True
+
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    type: str
+    title: str
+    message: str
+    is_read: bool
+    related_request_id: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AdminUserOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    phone_number: Optional[str] = None
+    plain_password: Optional[str] = None
+    is_verified: bool
+    is_suspended: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PaymentDetectionOut(BaseModel):
+    id: int
+    request_id: int
+    message_id: int
+    sender_id: int
+    detected_amount: Optional[float] = None
+    payment_status: str
+    detected_keywords: Optional[str] = None
+    screenshot_url: Optional[str] = None
+    detected_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -7,6 +7,7 @@
     <title>Dashboard | AcadMate</title>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -23,10 +24,21 @@
                             <i class="fas fa-comment-alt"></i>
                             <span id="chatBadge" class="nav-badge" style="display: none;"></span>
                         </button>
-                        <button class="nav-icon-btn" title="Notifications">
-                            <i class="fas fa-bell"></i>
-                            <span id="notifBadge" class="nav-badge" style="display: none;"></span>
-                        </button>
+                        <div style="position: relative;">
+                            <button onclick="toggleNotifications()" class="nav-icon-btn" title="Notifications">
+                                <i class="fas fa-bell"></i>
+                                <span id="notifBadge" class="nav-badge" style="display: none;"></span>
+                            </button>
+                            <div id="notificationPanel" class="notification-panel">
+                                <div class="notification-panel-header">
+                                    <h4>Notifications</h4>
+                                    <button class="mark-all-read-btn" onclick="markAllRead()">Mark all read</button>
+                                </div>
+                                <div class="notification-panel-body" id="notifList">
+                                    <p style="text-align: center; color: var(--secondary); padding: 2rem;">No notifications</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <button onclick="logout()" class="btn btn-outline" style="padding: 0.4rem 1rem;">Logout</button>
                 </div>
@@ -115,7 +127,6 @@
                     style="padding: 0.2rem 0.5rem;">&times;</button>
             </div>
             <div id="chatListContent">
-                <!-- Chat items will be injected here -->
                 <p style="color: var(--secondary); text-align: center;">No active chats found.</p>
             </div>
         </div>

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile,
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import models, schemas, auth, database, utils
+from routers.notifications_router import create_notification
 import os, uuid, json
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -131,7 +132,6 @@ def pay_advance(request_id: int, db: Session = Depends(database.get_db), current
 
 @router.put("/{request_id}/accept")
 async def accept_request(request_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
-    # Local import to avoid circularity if possible, though utils and separate sio would be better
     from main import sio
     auth.check_role(current_user, ["helper"])
     req = db.query(models.HelpRequest).filter(models.HelpRequest.id == request_id).first()
@@ -141,6 +141,14 @@ async def accept_request(request_id: int, db: Session = Depends(database.get_db)
     req.helper_id = current_user.id
     req.status = "in_progress"
     db.commit()
+    
+    # Notify student that their request was accepted
+    create_notification(
+        db, req.student_id, "request_accepted",
+        "Request Accepted!",
+        f"{current_user.name} accepted your request: {req.title}",
+        related_request_id=request_id
+    )
     
     # Broadcast to all connected clients that this request is no longer available
     await sio.emit('request_accepted', {'request_id': request_id})
@@ -161,6 +169,16 @@ def complete_request(request_id: int, db: Session = Depends(database.get_db), cu
         req.helper.completed_tasks += 1
     
     db.commit()
+    
+    # Notify helper
+    if req.helper_id:
+        create_notification(
+            db, req.helper_id, "request_completed",
+            "Request Completed!",
+            f"{current_user.name} marked '{req.title}' as completed.",
+            related_request_id=request_id
+        )
+    
     return {"message": "Request marked as completed"}
 
 @router.put("/{request_id}/cancel")

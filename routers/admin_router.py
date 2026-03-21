@@ -35,7 +35,7 @@ def get_overview(db: Session = Depends(database.get_db), current_user: models.Us
     }
 
 # --- USERS ---
-@admin_router.get("/users", response_model=List[schemas.UserOut])
+@admin_router.get("/users", response_model=List[schemas.AdminUserOut])
 def list_users(role: str = None, verified: bool = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
     auth.check_role(current_user, ["admin"])
     query = db.query(models.User)
@@ -114,6 +114,37 @@ def delete_message(message_id: int, db: Session = Depends(database.get_db), curr
     db.delete(msg)
     db.commit()
     return {"message": "Message deleted"}
+
+# --- PAYMENT DETECTIONS ---
+@admin_router.get("/payments", response_model=List[schemas.PaymentDetectionOut])
+def get_payment_detections(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
+    auth.check_role(current_user, ["admin"])
+    return db.query(models.PaymentDetection).order_by(models.PaymentDetection.detected_at.desc()).all()
+
+@admin_router.get("/payments/details")
+def get_payment_details(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
+    """Get payment detections with enriched details (user names, request titles)."""
+    auth.check_role(current_user, ["admin"])
+    detections = db.query(models.PaymentDetection).order_by(models.PaymentDetection.detected_at.desc()).all()
+    results = []
+    for d in detections:
+        sender = db.query(models.User).filter(models.User.id == d.sender_id).first()
+        request = db.query(models.HelpRequest).filter(models.HelpRequest.id == d.request_id).first()
+        msg = db.query(models.Message).filter(models.Message.id == d.message_id).first()
+        results.append({
+            "id": d.id,
+            "request_id": d.request_id,
+            "request_title": request.title if request else "Unknown",
+            "sender_name": sender.name if sender else "Unknown",
+            "sender_email": sender.email if sender else "Unknown",
+            "message_content": msg.content if msg else "",
+            "detected_amount": d.detected_amount,
+            "payment_status": d.payment_status,
+            "detected_keywords": d.detected_keywords,
+            "screenshot_url": d.screenshot_url,
+            "detected_at": d.detected_at.isoformat() if d.detected_at else None
+        })
+    return results
 
 # --- SETTINGS ---
 @admin_router.get("/settings", response_model=schemas.SystemSettingsOut)
