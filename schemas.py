@@ -82,6 +82,7 @@ class HelpRequestBase(BaseModel):
     description: str
     deadline: datetime
     budget: Optional[float] = None
+    is_urgent_print: Optional[bool] = False
 
 class HelpRequestCreate(HelpRequestBase):
     pass
@@ -171,6 +172,48 @@ class PaymentDetectionOut(BaseModel):
     detected_keywords: Optional[str] = None
     screenshot_url: Optional[str] = None
     detected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class MilestoneCreate(BaseModel):
+    amount: float
+    description: str
+
+class MilestoneOut(MilestoneCreate):
+    id: int
+    request_id: int
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class DisputeCreate(BaseModel):
+    request_id: int
+    reason: str
+
+class DisputeOut(DisputeCreate):
+    id: int
+    raised_by_id: int
+    status: str
+    admin_notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class MarketplaceItemCreate(BaseModel):
+    title: str
+    description: str
+    price: float
+    item_type: str
+
+class MarketplaceItemOut(MarketplaceItemCreate):
+    id: int
+    file_path: str
+    admin_id: int
+    created_at: datetime
 
     class Config:
         from_attributes = True

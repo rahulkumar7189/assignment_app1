@@ -14,6 +14,7 @@ async def create_request(
     description: str = Form(...),
     deadline: str = Form(...),
     budget: Optional[float] = Form(None),
+    is_urgent_print: Optional[bool] = Form(False),
     files: List[UploadFile] = File(None),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
@@ -42,6 +43,7 @@ async def create_request(
         deadline=utils.parse_datetime(deadline),
         budget=budget,
         student_id=current_user.id,
+        is_urgent_print=is_urgent_print,
         attachments=json.dumps(attachment_paths) if attachment_paths else None
     )
     db.add(new_req)
@@ -196,3 +198,96 @@ def cancel_request(request_id: int, db: Session = Depends(database.get_db), curr
     req.status = "cancelled"
     db.commit()
     return {"message": "Request cancelled"}
+
+# --- ESCROW & MILESTONE ENDPOINTS ---
+
+@router.post("/{request_id}/milestones", response_model=schemas.MilestoneOut)
+def create_milestone(request_id: int, milestone: schemas.MilestoneCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    req = db.query(models.HelpRequest).filter(models.HelpRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+        
+    if current_user.id not in [req.student_id, req.helper_id]:
+        raise HTTPException(status_code=403, detail="Not authorized for this request")
+        
+    new_milestone = models.Milestone(
+        request_id=request_id,
+        amount=milestone.amount,
+        description=milestone.description
+    )
+    db.add(new_milestone)
+    db.commit()
+    db.refresh(new_milestone)
+    
+    # Notify the other party
+    other_user_id = req.helper_id if current_user.id == req.student_id else req.student_id
+    if other_user_id:
+        create_notification(
+            db, other_user_id, "milestone_created",
+            "New Milestone Added",
+            f"A new milestone of ₹{milestone.amount} has been added to '{req.title}'.",
+            related_request_id=request_id
+        )
+    return new_milestone
+
+@router.get("/{request_id}/milestones", response_model=List[schemas.MilestoneOut])
+def get_milestones(request_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    req = db.query(models.HelpRequest).filter(models.HelpRequest.id == request_id).first()
+    if not req or (current_user.id not in [req.student_id, req.helper_id] and current_user.role != "admin"):
+        raise HTTPException(status_code=404, detail="Request not found or unauthorized")
+        
+    milestones = db.query(models.Milestone).filter(models.Milestone.request_id == request_id).all()
+    return milestones
+
+@router.put("/milestones/{milestone_id}/pay")
+def pay_milestone(milestone_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    milestone = db.query(models.Milestone).filter(models.Milestone.id == milestone_id).first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+        
+    req = db.query(models.HelpRequest).filter(models.HelpRequest.id == milestone.request_id).first()
+    if current_user.id != req.student_id:
+        raise HTTPException(status_code=403, detail="Only the student can pay the milestone")
+        
+    if milestone.status == "paid":
+        raise HTTPException(status_code=400, detail="Milestone is already paid")
+        
+    milestone.status = "paid"
+    db.commit()
+    
+    if req.helper_id:
+        create_notification(
+            db, req.helper_id, "milestone_paid",
+            "Milestone Paid!",
+            f"A milestone of ₹{milestone.amount} on '{req.title}' has been paid/released.",
+            related_request_id=req.id
+        )
+    return {"message": "Milestone successfully paid"}
+
+# --- DISPUTE ENDPOINTS ---
+
+@router.post("/{request_id}/disputes", response_model=schemas.DisputeOut)
+def raise_dispute(request_id: int, dispute: schemas.DisputeCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    req = db.query(models.HelpRequest).filter(models.HelpRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+        
+    if current_user.id not in [req.student_id, req.helper_id]:
+        raise HTTPException(status_code=403, detail="Not authorized to raise a dispute for this request")
+        
+    new_dispute = models.Dispute(
+        request_id=request_id,
+        raised_by_id=current_user.id,
+        reason=dispute.reason
+    )
+    db.add(new_dispute)
+    db.commit()
+    db.refresh(new_dispute)
+    
+    # Notify admin (Assuming admin has a generalized notification listener or we can add to logs)
+    return new_dispute
+
+# --- PUBLIC MARKETPLACE ---
+@router.get("/marketplace", response_model=List[schemas.MarketplaceItemOut])
+def get_marketplace_items(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return db.query(models.MarketplaceItem).order_by(models.MarketplaceItem.created_at.desc()).all()

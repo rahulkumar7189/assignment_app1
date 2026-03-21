@@ -177,6 +177,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'users': await loadUsers(); break;
             case 'requests': await loadRequests(); break;
             case 'payments': await loadPayments(); break;
+            case 'disputes': await loadDisputes(); break;
+            case 'marketplace': await loadMarketplace(); break;
             case 'logs': await loadLogs('logsList'); break;
             case 'settings': await loadSettings(); break;
         }
@@ -324,6 +326,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    async function loadDisputes() {
+        const disputes = await apiFetch('/admin/disputes');
+        const tbody = document.getElementById('disputesTableBody');
+        if (!tbody || !disputes) return;
+        tbody.innerHTML = '';
+
+        if (disputes.length > 0) {
+            disputes.forEach(d => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${d.id}</td>
+                    <td>${d.request_title} (#${d.request_id})</td>
+                    <td>${d.raised_by_name}</td>
+                    <td>${d.reason}</td>
+                    <td><span class="badge ${d.status === 'resolved' ? 'status-completed' : 'status-in_progress'}">${d.status}</span></td>
+                    <td>
+                        ${d.status === 'open' ? `<button class="btn btn-sm btn-primary" onclick="resolveDispute(${d.id})">Resolve</button>` : `<small>Resolved</small>`}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No disputes found.</td></tr>';
+        }
+    }
+
+    window.resolveDispute = async (id) => {
+        const note = prompt("Enter admin notes for resolution:");
+        if (note === null) return;
+        
+        const res = await apiFetch(`/admin/disputes/${id}/resolve`, {
+            method: 'PUT',
+            body: JSON.stringify({ admin_notes: note })
+        });
+        
+        if (res) {
+            alert("Dispute resolved!");
+            loadSectionData('disputes');
+        }
+    };
+
     async function loadSettings() {
         const s = await apiFetch('/admin/settings');
         if (s) {
@@ -332,6 +375,83 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('settingNotice').value = s.platform_notice || '';
         }
     }
+
+    // --- Marketplace Logic ---
+    async function loadMarketplace() {
+        const items = await apiFetch('/admin/marketplace');
+        const tbody = document.getElementById('marketplaceTableBody');
+        if (!tbody || !items) return;
+        tbody.innerHTML = '';
+
+        if (items.length > 0) {
+            items.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.id}</td>
+                    <td><strong>${item.title}</strong><br><small style="color:#64748b">${item.description.substring(0,30)}...</small></td>
+                    <td><span class="badge status-verified">${item.item_type.toUpperCase()}</span></td>
+                    <td style="color:#059669; font-weight:700;">₹${item.price}</td>
+                    <td><small>${new Date(item.created_at).toLocaleDateString()}</small></td>
+                    <td>
+                        <a href="${item.file_path}" target="_blank" class="btn btn-sm btn-outline"><i class="fas fa-download"></i></a>
+                        <button class="btn btn-sm btn-danger" onclick="deleteMarketplaceItem(${item.id})"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No items in the marketplace.</td></tr>';
+        }
+    }
+
+    const marketForm = document.getElementById('marketplaceForm');
+    if (marketForm) {
+        marketForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = marketForm.querySelector('button[type="submit"]');
+            btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Uploading...';
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('title', document.getElementById('marketTitle').value);
+            formData.append('description', document.getElementById('marketDesc').value);
+            formData.append('price', document.getElementById('marketPrice').value);
+            formData.append('item_type', document.getElementById('marketType').value);
+            formData.append('file', document.getElementById('marketFile').files[0]);
+
+            let token = localStorage.getItem('access_token');
+            try {
+                const res = await fetch(`${API_BASE_URL}/admin/marketplace`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+
+                if (res.ok) {
+                    alert('Item uploaded successfully!');
+                    marketForm.reset();
+                    loadMarketplace();
+                } else {
+                    const errorData = await res.json();
+                    alert('Error: ' + (errorData.detail || 'Failed to upload item'));
+                }
+            } catch (err) {
+                console.error('Upload Error:', err);
+                alert('Upload failed due to network error.');
+            } finally {
+                btn.innerHTML = 'Upload to Marketplace <i class="fas fa-upload"></i>';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    window.deleteMarketplaceItem = async (id) => {
+        if (!confirm('Are you sure you want to delete this marketplace item?')) return;
+        const res = await apiFetch(`/admin/marketplace/${id}`, { method: 'DELETE' });
+        if (res) {
+            loadMarketplace();
+        }
+    };
 
     // Define adminAction globally for inline handlers
     window.adminAction = async (action, id, data) => {

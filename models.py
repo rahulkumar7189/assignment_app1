@@ -45,6 +45,7 @@ class HelpRequest(Base):
     budget = Column(Float, nullable=True)
     status = Column(String, default="open") # open, in_progress, completed, cancelled
     advance_paid = Column(Boolean, default=False)
+    is_urgent_print = Column(Boolean, default=False)
     attachments = Column(Text, nullable=True) # JSON list of file paths
     
     student_id = Column(Integer, ForeignKey("users.id"))
@@ -123,3 +124,40 @@ class SystemSettings(Base):
     commission_percentage = Column(Float, default=10.0)
     payment_system_enabled = Column(Boolean, default=True)
     platform_notice = Column(String, nullable=True)
+
+class Milestone(Base):
+    __tablename__ = "milestones"
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(Integer, ForeignKey("help_requests.id"))
+    amount = Column(Float)
+    description = Column(String)
+    status = Column(String, default="pending") # pending, paid
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    request = relationship("HelpRequest", backref="milestones")
+
+class Dispute(Base):
+    __tablename__ = "disputes"
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(Integer, ForeignKey("help_requests.id"))
+    raised_by_id = Column(Integer, ForeignKey("users.id"))
+    reason = Column(Text)
+    status = Column(String, default="open") # open, resolved
+    admin_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    request = relationship("HelpRequest", backref="disputes")
+    raised_by = relationship("User")
+
+class MarketplaceItem(Base):
+    __tablename__ = "marketplace_items"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    description = Column(Text)
+    file_path = Column(String)
+    price = Column(Float, default=0.0)
+    item_type = Column(String) # notes, pyq, document
+    admin_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    admin = relationship("User")

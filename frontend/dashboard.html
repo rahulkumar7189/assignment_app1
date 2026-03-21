@@ -49,16 +49,77 @@
     <main class="container" style="padding-top: 120px;">
         <!-- Student Dashboard -->
         <div id="studentDashboard" style="display: none;">
+            
+            <!-- Welcome Header -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                <h2>My Help Requests</h2>
-                <button onclick="showRequestModal()" class="btn btn-primary">Post New Request</button>
+                <div>
+                    <h2>Welcome back, <span id="studentGreetingName">Student</span> 👋</h2>
+                    <p style="color: var(--secondary);">Here's what's happening with your assignments today.</p>
+                </div>
             </div>
-            <div id="studentRequests" class="feature-grid">
-                <!-- Requests will be injected here -->
+
+            <!-- Top Dashboard Stats -->
+            <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-file-alt" style="color: var(--primary); margin-right: 0.5rem;"></i>Total Requests</h3>
+                    <p id="studentStatTotal" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">0</p>
+                </div>
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-check-circle" style="color: #10b981; margin-right: 0.5rem;"></i>Completed</h3>
+                    <p id="studentStatCompleted" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">0</p>
+                </div>
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-hourglass-half" style="color: #f59e0b; margin-right: 0.5rem;"></i>Ongoing</h3>
+                    <p id="studentStatOngoing" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">0</p>
+                </div>
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-wallet" style="color: #8b5cf6; margin-right: 0.5rem;"></i>Total Spent</h3>
+                    <p id="studentStatSpent" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">₹0</p>
+                </div>
             </div>
-            <div style="margin-top: 4rem;">
+
+            <!-- Quick Actions -->
+            <div style="margin-bottom: 2rem;">
+                <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <button onclick="showRequestModal()" class="btn btn-primary" style="flex: 1; min-width: 200px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1rem;">
+                        <i class="fas fa-plus"></i> Post New Request
+                    </button>
+                    <button class="btn btn-outline" style="flex: 1; min-width: 200px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1rem;">
+                        <i class="fas fa-search"></i> Browse Helpers
+                    </button>
+                    <button class="btn btn-outline" style="flex: 1; min-width: 200px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1rem; color: #9ca3af; border-color: #e5e7eb; background-color: #f9fafb; cursor: not-allowed;" disabled title="Coming Soon">
+                        <i class="fas fa-book"></i> Notes Marketplace
+                    </button>
+                    <button class="btn btn-outline" style="flex: 1; min-width: 200px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1rem; color: #9ca3af; border-color: #e5e7eb; background-color: #f9fafb; cursor: not-allowed;" disabled title="Coming Soon">
+                        <i class="fas fa-bolt"></i> Instant Doubt Help
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Requests Area -->
+            <div style="margin-top: 3rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>Active Requests</h2>
+                    <a href="#history" style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600;">View History</a>
+                </div>
+                
+                <div id="studentRequests" class="feature-grid" style="margin-top: 0;">
+                    <!-- Requests will be injected here -->
+                </div>
+                
+                <!-- Empty State -->
+                <div id="studentRequestsEmpty" style="display: none; text-align: center; padding: 4rem 2rem; background: white; border-radius: 12px; border: 1px dashed var(--border);">
+                    <i class="fas fa-rocket" style="font-size: 3rem; color: var(--secondary); margin-bottom: 1rem;"></i>
+                    <h3 style="color: var(--text-dark); margin-bottom: 0.5rem;">No active requests yet</h3>
+                    <p style="color: var(--secondary); margin-bottom: 1.5rem;">Post your first assignment and get help in minutes 🚀</p>
+                    <button onclick="showRequestModal()" class="btn btn-primary">Post New Request</button>
+                </div>
+            </div>
+            
+            <div id="history" style="margin-top: 4rem;">
                 <h2>Booking History</h2>
-                <div id="studentHistory" class="feature-grid" style="grid-template-columns: 1fr;">
+                <div id="studentHistory" class="feature-grid" style="grid-template-columns: 1fr; margin-top: 1rem;">
                     <!-- History will be injected here -->
                 </div>
             </div>
@@ -66,6 +127,35 @@
 
         <!-- Helper Dashboard -->
         <div id="helperDashboard" style="display: none;">
+            
+            <!-- Welcome Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                <div>
+                    <h2>Welcome back, <span id="helperGreetingName">Helper</span> 👋</h2>
+                    <p style="color: var(--secondary);">Find new tasks and track your earnings.</p>
+                </div>
+            </div>
+
+            <!-- Top Dashboard Stats -->
+            <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-file-alt" style="color: var(--primary); margin-right: 0.5rem;"></i>Total Tasks</h3>
+                    <p id="helperStatTotal" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">0</p>
+                </div>
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-check-circle" style="color: #10b981; margin-right: 0.5rem;"></i>Completed</h3>
+                    <p id="helperStatCompleted" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">0</p>
+                </div>
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-hourglass-half" style="color: #f59e0b; margin-right: 0.5rem;"></i>Ongoing</h3>
+                    <p id="helperStatOngoing" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">0</p>
+                </div>
+                <div class="stat-card" style="background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+                    <h3 style="color: var(--secondary); font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fas fa-rupee-sign" style="color: #8b5cf6; margin-right: 0.5rem;"></i>Earned</h3>
+                    <p id="helperStatEarned" style="font-size: 1.8rem; font-weight: 700; color: var(--text-dark);">₹0</p>
+                </div>
+            </div>
+
             <div style="margin-bottom: 2rem;">
                 <h2>Available Requests</h2>
                 <div style="margin-top: 1rem;">
@@ -73,9 +163,17 @@
                         style="max-width: 300px;">
                 </div>
             </div>
+            
             <div id="availableRequests" class="feature-grid">
                 <!-- Available requests will be injected here -->
             </div>
+            
+            <div id="helperRequestsEmpty" style="display: none; text-align: center; padding: 4rem 2rem; background: white; border-radius: 12px; border: 1px dashed var(--border); margin-top: 2rem;">
+                <i class="fas fa-search" style="font-size: 3rem; color: var(--secondary); margin-bottom: 1rem;"></i>
+                <h3 style="color: var(--text-dark); margin-bottom: 0.5rem;">No requests available</h3>
+                <p style="color: var(--secondary); margin-bottom: 1.5rem;">Check back later for new helping opportunities 📚</p>
+            </div>
+
             <div style="margin-top: 4rem;">
                 <h2>My History</h2>
                 <div id="helperHistory" class="feature-grid" style="grid-template-columns: 1fr;">
@@ -110,6 +208,10 @@
                     <label>Attachments (PDF, Images, Docs)</label>
                     <input type="file" id="reqFiles" class="form-input" multiple>
                     <small style="color: var(--secondary);">You can upload multiple files.</small>
+                </div>
+                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 1rem; padding: 0.5rem; border-radius: 8px; background: #fff1f2; border: 1px dashed #fda4af;">
+                    <input type="checkbox" id="reqUrgentPrint" style="width: auto; height: 18px; width: 18px;">
+                    <label for="reqUrgentPrint" style="margin: 0; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #e11d48;"><i class="fas fa-print"></i> Require Urgent Print</label>
                 </div>
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Submit Request</button>
                 <button type="button" onclick="hideRequestModal()" class="btn btn-outline"
@@ -160,6 +262,19 @@
                 <input type="text" id="chatInput" class="form-input" placeholder="Type your message..." style="flex: 1;">
                 <button type="submit" class="btn btn-primary">Send</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Marketplace Modal -->
+    <div id="marketplaceModal" class="modal-overlay">
+        <div class="auth-card" style="max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3><i class="fas fa-store"></i> Notes Marketplace</h3>
+                <button onclick="hideMarketplaceModal()" class="btn btn-outline" style="padding: 0.2rem 0.5rem;">&times;</button>
+            </div>
+            <div id="marketplaceList" class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                <p style="color: var(--secondary); text-align: center; grid-column: 1/-1;">Loading marketplace items...</p>
+            </div>
         </div>
     </div>
 

@@ -37,6 +37,12 @@
                 <a href="#" class="nav-item" data-section="payments">
                     <i class="fas fa-rupee-sign"></i> Payment Tracking
                 </a>
+                <a href="#" class="nav-item" data-section="disputes">
+                    <i class="fas fa-gavel"></i> Disputes
+                </a>
+                <a href="#" class="nav-item" data-section="marketplace">
+                    <i class="fas fa-store"></i> Notes Marketplace
+                </a>
                 <a href="#" class="nav-item" data-section="analytics">
                     <i class="fas fa-chart-bar"></i> Analytics
                 </a>
@@ -223,6 +229,93 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </section>
+
+                <!-- Disputes Section -->
+                <section id="disputes" class="section">
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h2>Disputes Management</h2>
+                        </div>
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Request</th>
+                                    <th>Raised By</th>
+                                    <th>Reason</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="disputesTableBody">
+                                <tr>
+                                    <td colspan="6" class="loading">Loading disputes...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Marketplace Section -->
+                <section id="marketplace" class="section">
+                    <div class="dashboard-grid">
+                        <div class="grid-card">
+                            <div class="card-header">
+                                <h2>Upload New Item</h2>
+                            </div>
+                            <form id="marketplaceForm" class="settings-form" style="padding: 1rem;">
+                                <div class="form-group">
+                                    <label>Title</label>
+                                    <input type="text" id="marketTitle" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Description</label>
+                                    <textarea id="marketDesc" rows="2" required></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Price (₹)</label>
+                                    <input type="number" id="marketPrice" value="50" min="0" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Item Type</label>
+                                    <select id="marketType" required>
+                                        <option value="notes">Notes</option>
+                                        <option value="pyq">PYQs</option>
+                                        <option value="document">Document / Slides</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>File (PDF, Image, Doc)</label>
+                                    <input type="file" id="marketFile" required>
+                                </div>
+                                <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Upload to Marketplace <i class="fas fa-upload"></i></button>
+                            </form>
+                        </div>
+                        
+                        <div class="grid-card" style="grid-column: span 1 / span 2;">
+                            <div class="table-header">
+                                <h2>Current Marketplace Items</h2>
+                            </div>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Title</th>
+                                        <th>Type</th>
+                                        <th>Price</th>
+                                        <th>Uploaded</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="marketplaceTableBody">
+                                    <tr>
+                                        <td colspan="6" class="loading">Loading marketplace items...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 

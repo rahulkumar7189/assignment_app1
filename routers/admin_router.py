@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from typing import List
 import models, schemas, auth, database, utils
 import datetime
+import os, uuid
 from sqlalchemy import func
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
@@ -200,3 +201,95 @@ def update_settings(settings: schemas.SystemSettingsUpdate, db: Session = Depend
 def get_logs(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
     auth.check_role(current_user, ["admin"])
     return db.query(models.ActivityLog).order_by(models.ActivityLog.timestamp.desc()).limit(100).all()
+
+# --- DISPUTES ---
+@admin_router.get("/disputes")
+def get_disputes(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
+    auth.check_role(current_user, ["admin"])
+    disputes = db.query(models.Dispute).order_by(models.Dispute.created_at.desc()).all()
+    results = []
+    for d in disputes:
+        req = db.query(models.HelpRequest).filter(models.HelpRequest.id == d.request_id).first()
+        raiser = db.query(models.User).filter(models.User.id == d.raised_by_id).first()
+        results.append({
+            "id": d.id,
+            "request_id": d.request_id,
+            "request_title": req.title if req else "Unknown",
+            "raised_by_name": raiser.name if raiser else "Unknown",
+            "reason": d.reason,
+            "status": d.status,
+            "admin_notes": d.admin_notes,
+            "created_at": d.created_at.isoformat() if d.created_at else None
+        })
+    return results
+
+@admin_router.put("/disputes/{dispute_id}/resolve")
+def resolve_dispute(dispute_id: int, payload: dict, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
+    auth.check_role(current_user, ["admin"])
+    dispute = db.query(models.Dispute).filter(models.Dispute.id == dispute_id).first()
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+        
+    admin_notes = payload.get("admin_notes", "")
+    dispute.status = "resolved"
+    dispute.admin_notes = admin_notes
+    db.commit()
+    
+    utils.log_admin_action(db, current_user.id, "resolve_dispute", f"Resolved Dispute ID: {dispute_id}")
+    return {"message": "Dispute resolved successfully"}
+
+# --- MARKETPLACE ---
+@admin_router.post("/marketplace", response_model=schemas.MarketplaceItemOut)
+async def upload_marketplace_item(
+    title: str = Form(...),
+    description: str = Form(...),
+    price: float = Form(...),
+    item_type: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_admin)
+):
+    auth.check_role(current_user, ["admin"])
+    
+    # Save file
+    file_ext = os.path.splitext(file.filename)[1]
+    file_name = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join("uploads", file_name)
+    
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+        
+    relative_path = f"/uploads/{file_name}"
+    
+    new_item = models.MarketplaceItem(
+        title=title,
+        description=description,
+        file_path=relative_path,
+        price=price,
+        item_type=item_type,
+        admin_id=current_user.id
+    )
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+    
+    utils.log_admin_action(db, current_user.id, "upload_marketplace_item", f"Uploaded {item_type}: {title}")
+    return new_item
+
+@admin_router.get("/marketplace", response_model=List[schemas.MarketplaceItemOut])
+def get_admin_marketplace_items(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
+    auth.check_role(current_user, ["admin"])
+    return db.query(models.MarketplaceItem).order_by(models.MarketplaceItem.created_at.desc()).all()
+
+@admin_router.delete("/marketplace/{item_id}")
+def delete_marketplace_item(item_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
+    auth.check_role(current_user, ["admin"])
+    item = db.query(models.MarketplaceItem).filter(models.MarketplaceItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    db.delete(item)
+    db.commit()
+    utils.log_admin_action(db, current_user.id, "delete_marketplace_item", f"Deleted item ID {item_id}")
+    return {"message": "Item deleted successfully"}

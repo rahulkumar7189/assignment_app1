@@ -101,6 +101,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function setupDashboard(user) {
         document.getElementById('userName').textContent = `Hello, ${user.name} (${user.role})`;
+        const studentGreeting = document.getElementById('studentGreetingName');
+        const helperGreeting = document.getElementById('helperGreetingName');
+        if (studentGreeting) studentGreeting.textContent = user.name;
+        if (helperGreeting) helperGreeting.textContent = user.name;
 
         if (user.role === 'student') {
             document.getElementById('studentDashboard').style.display = 'block';
@@ -265,22 +269,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ===== STUDENT DATA =====
     async function fetchStudentData() {
+        // Fetch User Stats
+        const stats = await apiFetch('/users/me/stats');
+        if (stats) {
+            document.getElementById('studentStatTotal').textContent = stats.total_requests;
+            document.getElementById('studentStatCompleted').textContent = stats.completed;
+            document.getElementById('studentStatOngoing').textContent = stats.ongoing;
+            document.getElementById('studentStatSpent').textContent = `₹${stats.total_spent}`;
+        }
+
         const requests = await apiFetch('/requests/my');
         if (!requests || !Array.isArray(requests)) return;
 
         allRequests = requests;
         const activeContainer = document.getElementById('studentRequests');
+        const emptyStateContainer = document.getElementById('studentRequestsEmpty');
         const historyContainer = document.getElementById('studentHistory');
         if (!activeContainer || !historyContainer) return;
 
         activeContainer.innerHTML = '';
         historyContainer.innerHTML = '';
+        let activeCount = 0;
 
         requests.forEach(req => {
             const card = document.createElement('div');
             card.className = 'feature-card';
             const isHistorical = req.status === 'completed' || req.status === 'cancelled';
             const canPayAdvance = req.status === 'in_progress' && !req.advance_paid;
+
+            if (!isHistorical) activeCount++;
 
             card.innerHTML = `
                 <h3>${req.title}</h3>
@@ -299,6 +316,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isHistorical) historyContainer.appendChild(card);
             else activeContainer.appendChild(card);
         });
+
+        if (activeCount === 0 && emptyStateContainer) {
+            emptyStateContainer.style.display = 'block';
+            activeContainer.style.display = 'none';
+        } else if (emptyStateContainer) {
+            emptyStateContainer.style.display = 'none';
+            activeContainer.style.display = 'grid';
+        }
 
         if (historyContainer.innerHTML === '') historyContainer.innerHTML = '<p style="color: var(--secondary);">No history yet.</p>';
         updateChatBadge(requests);
@@ -354,18 +379,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function fetchAvailableRequests() {
+        const stats = await apiFetch('/users/me/stats');
+        if (stats) {
+            document.getElementById('helperStatTotal').textContent = stats.total_requests;
+            document.getElementById('helperStatCompleted').textContent = stats.completed;
+            document.getElementById('helperStatOngoing').textContent = stats.ongoing;
+            document.getElementById('helperStatEarned').textContent = `₹${stats.total_earned}`;
+        }
+
         const requests = await apiFetch('/requests/?status=open');
         if (!requests || !Array.isArray(requests)) return;
 
         const container = document.getElementById('availableRequests');
+        const emptyState = document.getElementById('helperRequestsEmpty');
         if (!container) return;
         container.innerHTML = '';
+        
+        if (requests.length === 0) {
+            if (emptyState) emptyState.style.display = 'block';
+            container.style.display = 'none';
+        } else {
+            if (emptyState) emptyState.style.display = 'none';
+            container.style.display = 'grid';
+        }
 
         requests.forEach(req => {
             const card = document.createElement('div');
             card.className = 'feature-card';
             card.id = `request-available-${req.id}`;
+            const urgentBadge = req.is_urgent_print ? `<span class="badge" style="background:#fef2f2; color:#ef4444; border:1px solid #fca5a5; margin-bottom: 0.5rem; display: inline-block;"><i class="fas fa-print"></i> URGENT PRINT</span>` : '';
             card.innerHTML = `
+                ${urgentBadge}
                 <h3>${req.title}</h3>
                 <p><strong>Subject:</strong> ${req.subject}</p>
                 <p><strong>Budget:</strong> ₹${req.budget || 'N/A'}</p>
@@ -458,6 +502,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.showRequestModal = () => document.getElementById('requestModal').style.display = 'flex';
     window.hideRequestModal = () => document.getElementById('requestModal').style.display = 'none';
+
+    window.showMarketplaceModal = async () => {
+        document.getElementById('marketplaceModal').style.display = 'flex';
+        const list = document.getElementById('marketplaceList');
+        list.innerHTML = '<p style="color: var(--secondary); text-align: center; grid-column: 1/-1;">Loading marketplace items...</p>';
+        const items = await apiFetch('/requests/marketplace');
+        if (!items || items.length === 0) {
+            list.innerHTML = '<p style="color: var(--secondary); text-align: center; grid-column: 1/-1;">No study materials or notes available yet.</p>';
+            return;
+        }
+        list.innerHTML = '';
+        items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'feature-card';
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                    <span class="badge status-completed">${item.item_type.toUpperCase()}</span>
+                    <span style="font-weight: 700; color: #059669;">₹${item.price}</span>
+                </div>
+                <h3>${item.title}</h3>
+                <p style="font-size: 0.9rem; margin-bottom: 1rem;">${item.description}</p>
+                <a href="${BASE_URL_ROOT}${item.file_path}" target="_blank" class="btn btn-primary" style="width: 100%; text-align: center;">View & Download <i class="fas fa-download"></i></a>
+            `;
+            list.appendChild(card);
+        });
+    };
+    window.hideMarketplaceModal = () => document.getElementById('marketplaceModal').style.display = 'none';
 
     window.showChatList = async () => {
         const listContent = document.getElementById('chatListContent');
@@ -552,6 +623,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             formData.append('subject', document.getElementById('reqSubject').value);
             formData.append('description', document.getElementById('reqDesc').value);
             formData.append('deadline', new Date(document.getElementById('reqDeadline').value).toISOString());
+            formData.append('is_urgent_print', document.getElementById('reqUrgentPrint').checked);
 
             const fileInput = document.getElementById('reqFiles');
             if (fileInput.files.length > 0) {
