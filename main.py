@@ -26,8 +26,25 @@ def _initialize_database() -> None:
         ) from None
 
 
-# Create DB tables
+def _run_migrations() -> None:
+    """Add new columns to existing tables that create_all() won't handle."""
+    from sqlalchemy import text
+    migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR",
+    ]
+    try:
+        with database.engine.connect() as conn:
+            for sql in migrations:
+                conn.execute(text(sql))
+            conn.commit()
+        print("Database migrations applied successfully.")
+    except Exception as e:
+        print(f"Migration warning (non-fatal): {e}")
+
+
+# Create DB tables + run migrations
 _initialize_database()
+_run_migrations()
 
 def _create_default_admins() -> None:
     """Create default admin accounts if they don't already exist."""
