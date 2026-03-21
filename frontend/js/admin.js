@@ -233,6 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>
                     <button class="btn btn-sm btn-outline" onclick="adminAction('verify', ${u.id}, ${!u.is_verified})">${u.is_verified ? 'Unverify' : 'Verify'}</button>
                     <button class="btn btn-sm btn-danger" onclick="adminAction('suspend', ${u.id})">Suspend</button>
+                    <button class="btn btn-sm btn-danger" style="background-color: #7f1d1d; border-color: #7f1d1d;" onclick="adminAction('delete', ${u.id})">Delete</button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -336,10 +337,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.adminAction = async (action, id, data) => {
         let url = '';
         let method = 'PUT';
-        if (action === 'verify') url = `/admin/users/${id}/status?is_verified=${data}`;
-        if (action === 'suspend') url = `/admin/users/${id}/status?is_suspended=true`;
+        
+        if (action === 'delete') {
+            if (!confirm('Are you absolutely sure you want to permanently delete this user? This will also delete all their requests, messages, and history.')) return;
+            url = `/admin/users/${id}`;
+            method = 'DELETE';
+        } else {
+            if (action === 'verify') url = `/admin/users/${id}/status?is_verified=${data}`;
+            if (action === 'suspend') url = `/admin/users/${id}/status?is_suspended=true`;
+        }
 
-        await apiFetch(url, { method });
+        const res = await apiFetch(url, { method });
+        if (res && action === 'delete') {
+            alert('User permanently deleted.');
+        }
         loadSectionData(window.location.hash.replace('#', '') || 'overview');
     };
 

@@ -61,19 +61,49 @@ def update_user_status(user_id: int, is_suspended: bool = None, is_verified: boo
         utils.log_admin_action(db, current_user.id, "verify_user" if is_verified else "unverify_user", f"User ID: {user_id}")
         
     db.commit()
-    return {"message": "User status updated"}
+    return {"status": "updated"}
 
 @admin_router.delete("/users/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_admin)):
     auth.check_role(current_user, ["admin"])
+    
+    # Prevent admin from deleting themselves
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account")
+        
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    db.delete(user)
-    db.commit()
-    utils.log_admin_action(db, current_user.id, "delete_user", f"User ID: {user_id}")
-    return {"message": "User deleted"}
+        
+    # Manual cascading delete to avoid Integrity Errors
+    try:
+        # 1. Activity Logs & Notifications
+        db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).delete()
+        db.query(models.Notification).filter(models.Notification.user_id == user_id).delete()
+        
+        # 2. As Helper: Unlink from existing requests
+        db.query(models.HelpRequest).filter(models.HelpRequest.helper_id == user_id).update({"helper_id": None})
+        
+        # 3. As Student: Delete requests and their dependent records
+        student_requests = db.query(models.HelpRequest).filter(models.HelpRequest.student_id == user_id).all()
+        for req in student_requests:
+            db.query(models.PaymentDetection).filter(models.PaymentDetection.request_id == req.id).delete()
+            db.query(models.Review).filter(models.Review.request_id == req.id).delete()
+            db.query(models.Message).filter(models.Message.request_id == req.id).delete()
+            db.delete(req)
+            
+        # 4. Stray messages and explicit payment detections by this user
+        db.query(models.Message).filter(models.Message.sender_id == user_id).delete()
+        db.query(models.PaymentDetection).filter(models.PaymentDetection.sender_id == user_id).delete()
+        
+        # Log action and delete user
+        utils.log_admin_action(db, current_user.id, "delete_user", f"Deleted User ID: {user_id} ({user.email})")
+        db.delete(user)
+        db.commit()
+        return {"status": "deleted", "message": "User permanently deleted."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
 
 # --- REQUESTS ---
 @admin_router.get("/requests", response_model=List[schemas.HelpRequestOut])
