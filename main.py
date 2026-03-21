@@ -48,6 +48,7 @@ def _run_migrations() -> None:
 
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment VARCHAR",
     ]
     try:
         with database.engine.connect() as conn:
