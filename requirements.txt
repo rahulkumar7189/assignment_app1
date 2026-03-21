@@ -11,3 +11,4 @@ python-socketio
 websockets
 pydantic[email]
 jinja2
+socketio

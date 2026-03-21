@@ -29,6 +29,37 @@ def _initialize_database() -> None:
 # Create DB tables
 _initialize_database()
 
+def _create_default_admins() -> None:
+    """Create default admin accounts if they don't already exist."""
+    admins = [
+        {"name": "Platform Administrator", "email": "admin@cvru.ac.in", "password": "admin@123"},
+        {"name": "Platform Administrator 82", "email": "admin82@cvrcp.ac.in", "password": "admin82@cgu"},
+    ]
+    db = database.SessionLocal()
+    try:
+        for admin_info in admins:
+            existing = db.query(models.User).filter(models.User.email == admin_info["email"]).first()
+            if not existing:
+                new_admin = models.User(
+                    name=admin_info["name"],
+                    email=admin_info["email"],
+                    hashed_password=auth.get_password_hash(admin_info["password"]),
+                    role="admin",
+                    phone_number="0000000000",
+                    is_verified=True,
+                    is_suspended=False,
+                )
+                db.add(new_admin)
+                db.commit()
+                print(f"Admin user created: {admin_info['email']}")
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating admin users: {e}")
+    finally:
+        db.close()
+
+_create_default_admins()
+
 # Ensure upload directories exist
 os.makedirs("uploads/chat", exist_ok=True)
 
