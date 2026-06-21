@@ -295,21 +295,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             const card = document.createElement('div');
             card.className = 'feature-card';
             const isHistorical = req.status === 'completed' || req.status === 'cancelled';
-            const canPayAdvance = req.status === 'in_progress' && !req.advance_paid;
+            const canUnlock = req.status === 'in_progress' && !req.contact_unlocked;
 
             if (!isHistorical) activeCount++;
+
+            const contactBlock = req.contact_unlocked && req.peer_phone ? `
+                <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:0.5rem;padding:0.75rem;margin:0.5rem 0;font-size:0.88rem;">
+                    <p style="font-weight:700;color:#15803d;margin:0 0 0.4rem;"><i class="fas fa-address-card"></i> Helper Contact</p>
+                    ${req.peer_phone ? `<p style="margin:0.2rem 0;"><i class="fas fa-phone" style="width:16px;"></i> <a href="tel:${req.peer_phone}">${req.peer_phone}</a></p>` : ''}
+                    ${req.peer_email ? `<p style="margin:0.2rem 0;"><i class="fas fa-envelope" style="width:16px;"></i> <a href="mailto:${req.peer_email}">${req.peer_email}</a></p>` : ''}
+                    ${req.peer_whatsapp ? `<p style="margin:0.2rem 0;"><i class="fab fa-whatsapp" style="width:16px;color:#25d366;"></i> ${req.peer_whatsapp}</p>` : ''}
+                    ${req.peer_telegram ? `<p style="margin:0.2rem 0;"><i class="fab fa-telegram" style="width:16px;color:#0088cc;"></i> ${req.peer_telegram}</p>` : ''}
+                </div>` : '';
 
             card.innerHTML = `
                 <h3>${req.title}</h3>
                 <p><strong>Subject:</strong> ${req.subject}</p>
                 <p><strong>Helper:</strong> ${req.helper_name || 'Finding helper...'}</p>
-                ${req.peer_phone ? `<p style="color: var(--primary); font-weight: 700;"><i class="fas fa-phone"></i> Contact: <a href="tel:${req.peer_phone}">${req.peer_phone}</a></p>` : ''}
+                ${contactBlock}
                 <p><strong>Status:</strong> <span class="badge status-${req.status}">${req.status}</span></p>
                 <p>${req.description.substring(0, 100)}...</p>
                 ${renderAttachments(req.attachments)}
                 <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
                     <button onclick="viewChat(${req.id}, '${req.title.replace(/'/g, "\\'")})" class="btn btn-outline" style="flex: 1;">Chat</button>
-                    ${canPayAdvance ? `<button onclick="payAdvance(${req.id})" class="btn btn-primary" style="flex: 1; background-color: #059669;">Pay Advance</button>` : ''}
+                    ${canUnlock ? `<button onclick="unlockContact('${req.id}')" class="btn btn-primary" style="flex: 1; background-color: #059669;"><i class="fas fa-unlock"></i> Unlock Contact &#8377;20</button>` : ''}
                     ${!isHistorical && req.status === 'in_progress' ? `<button onclick="markCompleted(${req.id})" class="btn btn-primary" style="flex: 1;">Complete</button>` : ''}
                 </div>
             `;
@@ -350,10 +359,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         requests.forEach(req => {
             const card = document.createElement('div');
             card.className = 'feature-card';
+            const helperContactBlock = req.contact_unlocked && req.peer_phone ? `
+                <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:0.5rem;padding:0.75rem;margin:0.5rem 0;font-size:0.88rem;">
+                    <p style="font-weight:700;color:#15803d;margin:0 0 0.4rem;"><i class="fas fa-address-card"></i> Student Contact</p>
+                    ${req.peer_phone ? `<p style="margin:0.2rem 0;"><i class="fas fa-phone" style="width:16px;"></i> <a href="tel:${req.peer_phone}">${req.peer_phone}</a></p>` : ''}
+                    ${req.peer_email ? `<p style="margin:0.2rem 0;"><i class="fas fa-envelope" style="width:16px;"></i> <a href="mailto:${req.peer_email}">${req.peer_email}</a></p>` : ''}
+                    ${req.peer_whatsapp ? `<p style="margin:0.2rem 0;"><i class="fab fa-whatsapp" style="width:16px;color:#25d366;"></i> ${req.peer_whatsapp}</p>` : ''}
+                    ${req.peer_telegram ? `<p style="margin:0.2rem 0;"><i class="fab fa-telegram" style="width:16px;color:#0088cc;"></i> ${req.peer_telegram}</p>` : ''}
+                </div>` : '';
+
             card.innerHTML = `
                 <h3>${req.title}</h3>
                 <p><strong>Student:</strong> ${req.student_name}</p>
-                ${req.peer_phone ? `<p style="color: var(--primary); font-weight: 700;"><i class="fas fa-phone"></i> Contact: <a href="tel:${req.peer_phone}">${req.peer_phone}</a></p>` : ''}
+                ${helperContactBlock}
                 <p><strong>Status:</strong> <span class="badge status-${req.status}">${req.status}</span></p>
                 <p>${req.description.substring(0, 100)}...</p>
                 ${renderAttachments(req.attachments)}
@@ -434,14 +452,80 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ===== GLOBAL UI HANDLERS =====
-    window.payAdvance = async (id) => {
-        if (!confirm('Pay 50% advance to reveal helper contact details?')) return;
-        const res = await apiFetch(`/requests/${id}/pay-advance`, { method: 'PUT' });
-        if (res) {
-            alert('Payment successful! Contact details unlocked.');
-            location.reload();
+    window.unlockContact = async (requestId) => {
+        // Show disclaimer modal first — user must confirm before Razorpay opens
+        const disclaimerModal = document.getElementById('unlockDisclaimerModal');
+        if (disclaimerModal) {
+            disclaimerModal.style.display = 'flex';
         }
+
+        document.getElementById('unlockProceedBtn').onclick = async () => {
+            if (disclaimerModal) disclaimerModal.style.display = 'none';
+            await _openRazorpayUnlock(requestId);
+        };
     };
+
+    async function _openRazorpayUnlock(requestId) {
+        // 1. Get the Razorpay public key
+        const config = await apiFetch('/payments/config');
+        if (!config || !config.key_id || config.key_id.includes('XXXX')) {
+            alert('Payment gateway is not yet configured. Please contact the administrator.');
+            return;
+        }
+
+        // 2. Create ₹20 Razorpay order on the backend
+        const orderData = await apiFetch('/payments/create-order', {
+            method: 'POST',
+            body: JSON.stringify({ request_id: requestId })
+        });
+        if (!orderData) return;
+
+        // 3. Read current user info for prefill
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        // 4. Open Razorpay Checkout (always ₹20 = 2000 paise)
+        const options = {
+            key: config.key_id,
+            amount: 2000,
+            currency: 'INR',
+            name: 'AcadMate',
+            description: `Unlock contact: ${orderData.request_title}`,
+            image: 'https://ui-avatars.com/api/?name=AcadMate&background=4f46e5&color=fff&size=80',
+            order_id: orderData.razorpay_order_id,
+            handler: async function (response) {
+                // 5. Verify signature on backend — sets contact_unlocked = true
+                const verifyRes = await apiFetch('/payments/verify', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        razorpay_order_id:   response.razorpay_order_id,
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_signature:  response.razorpay_signature,
+                        request_id:          requestId
+                    })
+                });
+                if (verifyRes && verifyRes.success) {
+                    const modal = document.getElementById('paymentModal');
+                    if (modal) modal.style.display = 'flex';
+                    else location.reload();
+                } else {
+                    alert('Payment verification failed. Please contact support.');
+                }
+            },
+            prefill: {
+                name:    user.name    || '',
+                email:   user.email   || '',
+                contact: user.phone_number || ''
+            },
+            theme:  { color: '#4f46e5' },
+            modal:  { backdropclose: false }
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', function (resp) {
+            alert(`Payment failed: ${resp.error.description}`);
+        });
+        rzp.open();
+    }
 
     window.acceptRequest = async (id) => {
         const res = await apiFetch(`/requests/${id}/accept`, { method: 'PUT' });
@@ -696,7 +780,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         if (socket && socket.connected) {
                             socket.emit('send_message', {
-                                request_id: parseInt(currentChatId),
+                                request_id: currentChatId,
                                 sender_id: user?.id,
                                 content: saved.content,
                                 attachment: saved.attachment
@@ -718,7 +802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     if (socket && socket.connected) {
                         socket.emit('send_message', {
-                            request_id: parseInt(currentChatId),
+                            request_id: currentChatId,
                             sender_id: user?.id,
                             content: content
                         });

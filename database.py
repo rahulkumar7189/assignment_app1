@@ -1,25 +1,33 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from motor.motor_asyncio import AsyncIOMotorClient
+from beanie import init_beanie
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017/acadmate")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "acadmate")
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set. PostgreSQL connection is required.")
+motor_client: AsyncIOMotorClient = None
 
-engine = create_engine(DATABASE_URL)
-ACTIVE_DATABASE_URL = DATABASE_URL
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+async def init_db():
+    global motor_client
+    from models import (
+        User, HelpRequest, Message, Review, ActivityLog, Notification,
+        PaymentDetection, SystemSettings, Milestone, Dispute,
+        MarketplaceItem, RazorpayOrder,
+    )
+    motor_client = AsyncIOMotorClient(MONGO_URL)
+    await init_beanie(
+        database=motor_client[MONGO_DB_NAME],
+        document_models=[
+            User, HelpRequest, Message, Review, ActivityLog, Notification,
+            PaymentDetection, SystemSettings, Milestone, Dispute,
+            MarketplaceItem, RazorpayOrder,
+        ],
+    )
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
+def get_motor_client() -> AsyncIOMotorClient:
+    return motor_client

@@ -1,163 +1,178 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Text, Boolean
-from sqlalchemy.orm import relationship
-from database import Base
-import datetime
-import enum
+from beanie import Document
+from beanie.odm.fields import PydanticObjectId
+from pydantic import Field
+from pymongo import ASCENDING, IndexModel
+from typing import Optional, List
+from datetime import datetime
 
-class UserRole(str, enum.Enum):
-    STUDENT = "student"
-    HELPER = "helper"
-    ADMIN = "admin"
 
-class RequestStatus(str, enum.Enum):
-    OPEN = "open"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+class User(Document):
+    name: str
+    email: str
+    hashed_password: str
+    plain_password: Optional[str] = None
+    role: str  # student, helper, admin
+    phone_number: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    telegram_id: Optional[str] = None
+    rating: float = 0.0
+    completed_tasks: int = 0
+    is_suspended: bool = False
+    is_verified: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class User(Base):
-    __tablename__ = "users"
+    class Settings:
+        name = "users"
+        indexes = [
+            IndexModel([("email", ASCENDING)], unique=True),
+        ]
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    plain_password = Column(String, nullable=True)  # For admin visibility
-    role = Column(String) # student, helper, admin
-    phone_number = Column(String, nullable=True)
-    rating = Column(Float, default=0.0)
-    completed_tasks = Column(Integer, default=0)
-    is_suspended = Column(Boolean, default=False)
-    is_verified = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    requests_as_student = relationship("HelpRequest", foreign_keys="HelpRequest.student_id", back_populates="student")
-    requests_as_helper = relationship("HelpRequest", foreign_keys="HelpRequest.helper_id", back_populates="helper")
+class HelpRequest(Document):
+    title: str
+    subject: str
+    description: str
+    deadline: datetime
+    budget: Optional[float] = None
+    status: str = "open"  # open, in_progress, completed, cancelled
+    contact_unlocked: bool = False
+    is_urgent_print: bool = False
+    attachments: Optional[List[str]] = None
+    student_id: PydanticObjectId
+    helper_id: Optional[PydanticObjectId] = None
+    student_name: Optional[str] = None  # denormalized — avoids N+1 queries
+    helper_name: Optional[str] = None   # denormalized
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class HelpRequest(Base):
-    __tablename__ = "help_requests"
+    class Settings:
+        name = "help_requests"
+        indexes = [
+            IndexModel([("status", ASCENDING)]),
+            IndexModel([("student_id", ASCENDING)]),
+            IndexModel([("helper_id", ASCENDING)]),
+        ]
 
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    subject = Column(String)
-    description = Column(Text)
-    deadline = Column(DateTime)
-    budget = Column(Float, nullable=True)
-    status = Column(String, default="open") # open, in_progress, completed, cancelled
-    advance_paid = Column(Boolean, default=False)
-    is_urgent_print = Column(Boolean, default=False)
-    attachments = Column(Text, nullable=True) # JSON list of file paths
-    
-    student_id = Column(Integer, ForeignKey("users.id"))
-    helper_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    student = relationship("User", foreign_keys=[student_id], back_populates="requests_as_student")
-    helper = relationship("User", foreign_keys=[helper_id], back_populates="requests_as_helper")
-    messages = relationship("Message", back_populates="request")
-    reviews = relationship("Review", back_populates="request")
+class Message(Document):
+    request_id: PydanticObjectId
+    sender_id: PydanticObjectId
+    content: Optional[str] = None
+    attachment: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-class Message(Base):
-    __tablename__ = "messages"
+    class Settings:
+        name = "messages"
+        indexes = [IndexModel([("request_id", ASCENDING)])]
 
-    id = Column(Integer, primary_key=True, index=True)
-    request_id = Column(Integer, ForeignKey("help_requests.id"))
-    sender_id = Column(Integer, ForeignKey("users.id"))
-    content = Column(Text, nullable=True)
-    attachment = Column(String, nullable=True)  # file path for uploaded attachment
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
-    request = relationship("HelpRequest", back_populates="messages")
+class Review(Document):
+    request_id: PydanticObjectId
+    rating: int
+    feedback: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class Review(Base):
-    __tablename__ = "reviews"
+    class Settings:
+        name = "reviews"
 
-    id = Column(Integer, primary_key=True, index=True)
-    request_id = Column(Integer, ForeignKey("help_requests.id"))
-    rating = Column(Integer)
-    feedback = Column(Text)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    request = relationship("HelpRequest", back_populates="reviews")
+class ActivityLog(Document):
+    user_id: Optional[PydanticObjectId] = None
+    action: str
+    details: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-class ActivityLog(Base):
-    __tablename__ = "activity_logs"
+    class Settings:
+        name = "activity_logs"
+        indexes = [IndexModel([("timestamp", ASCENDING)])]
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    action = Column(String)
-    details = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
-class Notification(Base):
-    __tablename__ = "notifications"
+class Notification(Document):
+    user_id: PydanticObjectId
+    type: str
+    title: str
+    message: str
+    is_read: bool = False
+    related_request_id: Optional[PydanticObjectId] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    type = Column(String)  # message, request_accepted, request_completed, payment
-    title = Column(String)
-    message = Column(Text)
-    is_read = Column(Boolean, default=False)
-    related_request_id = Column(Integer, ForeignKey("help_requests.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    class Settings:
+        name = "notifications"
+        indexes = [IndexModel([("user_id", ASCENDING)])]
 
-class PaymentDetection(Base):
-    __tablename__ = "payment_detections"
 
-    id = Column(Integer, primary_key=True, index=True)
-    request_id = Column(Integer, ForeignKey("help_requests.id"))
-    message_id = Column(Integer, ForeignKey("messages.id"))
-    sender_id = Column(Integer, ForeignKey("users.id"))
-    detected_amount = Column(Float, nullable=True)
-    payment_status = Column(String, default="initiated")  # initiated, confirmed
-    detected_keywords = Column(Text)
-    screenshot_url = Column(String, nullable=True)
-    detected_at = Column(DateTime, default=datetime.datetime.utcnow)
+class PaymentDetection(Document):
+    request_id: PydanticObjectId
+    message_id: PydanticObjectId
+    sender_id: PydanticObjectId
+    detected_amount: Optional[float] = None
+    payment_status: str = "initiated"
+    detected_keywords: Optional[str] = None
+    screenshot_url: Optional[str] = None
+    detected_at: datetime = Field(default_factory=datetime.utcnow)
 
-class SystemSettings(Base):
-    __tablename__ = "system_settings"
+    class Settings:
+        name = "payment_detections"
 
-    id = Column(Integer, primary_key=True, index=True)
-    allowed_email_domain = Column(String, default="cvru.ac.in")
-    admin_approval_required = Column(Boolean, default=False)
-    commission_percentage = Column(Float, default=10.0)
-    payment_system_enabled = Column(Boolean, default=True)
-    platform_notice = Column(String, nullable=True)
 
-class Milestone(Base):
-    __tablename__ = "milestones"
-    id = Column(Integer, primary_key=True, index=True)
-    request_id = Column(Integer, ForeignKey("help_requests.id"))
-    amount = Column(Float)
-    description = Column(String)
-    status = Column(String, default="pending") # pending, paid
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
-    request = relationship("HelpRequest", backref="milestones")
+class SystemSettings(Document):
+    allowed_email_domain: str = "cvru.ac.in"
+    admin_approval_required: bool = False
+    commission_percentage: float = 10.0
+    payment_system_enabled: bool = True
+    platform_notice: Optional[str] = None
 
-class Dispute(Base):
-    __tablename__ = "disputes"
-    id = Column(Integer, primary_key=True, index=True)
-    request_id = Column(Integer, ForeignKey("help_requests.id"))
-    raised_by_id = Column(Integer, ForeignKey("users.id"))
-    reason = Column(Text)
-    status = Column(String, default="open") # open, resolved
-    admin_notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    class Settings:
+        name = "system_settings"
 
-    request = relationship("HelpRequest", backref="disputes")
-    raised_by = relationship("User")
 
-class MarketplaceItem(Base):
-    __tablename__ = "marketplace_items"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    description = Column(Text)
-    file_path = Column(String)
-    price = Column(Float, default=0.0)
-    item_type = Column(String) # notes, pyq, document
-    admin_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+class Milestone(Document):
+    request_id: PydanticObjectId
+    amount: float
+    description: str
+    status: str = "pending"  # pending, paid
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    admin = relationship("User")
+    class Settings:
+        name = "milestones"
+
+
+class Dispute(Document):
+    request_id: PydanticObjectId
+    raised_by_id: PydanticObjectId
+    reason: str
+    status: str = "open"  # open, resolved
+    admin_notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "disputes"
+
+
+class MarketplaceItem(Document):
+    title: str
+    description: str
+    file_path: str
+    price: float = 0.0
+    item_type: str
+    admin_id: PydanticObjectId
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "marketplace_items"
+
+
+class RazorpayOrder(Document):
+    request_id: Optional[PydanticObjectId] = None
+    student_id: PydanticObjectId
+    razorpay_order_id: str
+    amount: float  # always 20.0
+    status: str = "created"  # created, paid, failed
+    razorpay_payment_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    paid_at: Optional[datetime] = None
+
+    class Settings:
+        name = "razorpay_orders"
+        indexes = [
+            IndexModel([("razorpay_order_id", ASCENDING)], unique=True),
+        ]

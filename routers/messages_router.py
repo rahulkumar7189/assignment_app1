@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
 from typing import List, Optional
-import models, schemas, auth, database
+import models, schemas, auth
 from routers.notifications_router import create_notification
+from beanie.odm.fields import PydanticObjectId
 import uuid, os, re
 
 router = APIRouter(tags=["messages"])
@@ -15,7 +15,7 @@ PAYMENT_KEYWORDS = [
     "transaction", "receipt", "screenshot", "sent money",
     "received money", "bank transfer", "neft", "imps", "rtgs",
     "advance payment", "advance paid", "payment done", "payment confirmed",
-    "payment successful", "payment completed", "amount sent", "money sent"
+    "payment successful", "payment completed", "amount sent", "money sent",
 ]
 
 AMOUNT_PATTERNS = [
@@ -28,8 +28,8 @@ AMOUNT_PATTERNS = [
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
+
 def _detect_payment(content: str, attachment: str = None):
-    """Check message for payment-related content. Returns (is_payment, amount, keywords, is_screenshot)."""
     found_keywords = []
     amount = None
     is_screenshot = False
@@ -40,7 +40,6 @@ def _detect_payment(content: str, attachment: str = None):
             if kw in content_lower:
                 found_keywords.append(kw)
 
-        # Extract amount
         for pattern in AMOUNT_PATTERNS:
             match = re.search(pattern, content, re.IGNORECASE)
             if match:
@@ -53,17 +52,14 @@ def _detect_payment(content: str, attachment: str = None):
     if attachment:
         ext = os.path.splitext(attachment)[1].lower()
         if ext in IMAGE_EXTENSIONS:
-            # Check if filename or content suggests payment screenshot
             attachment_lower = attachment.lower()
             if any(kw in attachment_lower for kw in ["payment", "screenshot", "upi", "gpay", "transaction", "receipt"]):
                 is_screenshot = True
                 found_keywords.append("payment_screenshot")
-            # If message content has payment keywords and there's an image, likely a screenshot
             elif found_keywords:
                 is_screenshot = True
                 found_keywords.append("image_with_payment_context")
 
-    # Determine payment status
     confirmed_keywords = ["payment done", "payment confirmed", "payment successful", "payment completed", "transferred", "paid"]
     status = "initiated"
     if content:
@@ -76,8 +72,7 @@ def _detect_payment(content: str, attachment: str = None):
     return len(found_keywords) > 0, amount, ", ".join(found_keywords), is_screenshot, status
 
 
-def _save_payment_detection(db: Session, request_id: int, message_id: int, sender_id: int, amount, keywords, screenshot_url, status):
-    """Save a payment detection record."""
+async def _save_payment_detection(request_id, message_id, sender_id, amount, keywords, screenshot_url, status):
     try:
         detection = models.PaymentDetection(
             request_id=request_id,
@@ -86,75 +81,72 @@ def _save_payment_detection(db: Session, request_id: int, message_id: int, sende
             detected_amount=amount,
             payment_status=status,
             detected_keywords=keywords,
-            screenshot_url=screenshot_url
+            screenshot_url=screenshot_url,
         )
-        db.add(detection)
-        db.commit()
+        await detection.insert()
     except Exception as e:
         print(f"Error saving payment detection: {e}")
-        db.rollback()
 
 
-def _verify_chat_access(request_id: int, db: Session, current_user: models.User):
-    """Verify the request exists and the user is part of it."""
-    help_request = db.query(models.HelpRequest).filter(models.HelpRequest.id == request_id).first()
+async def _verify_chat_access(request_id: str, current_user: models.User):
+    help_request = await models.HelpRequest.find_one(
+        models.HelpRequest.id == PydanticObjectId(request_id)
+    )
     if not help_request:
         raise HTTPException(status_code=404, detail="Request not found")
     if current_user.id != help_request.student_id and current_user.id != help_request.helper_id:
         raise HTTPException(status_code=403, detail="Not authorized for this chat")
     return help_request
 
+
 @router.get("/requests/{request_id}/messages", response_model=List[schemas.MessageOut])
-def get_messages(request_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
-    _verify_chat_access(request_id, db, current_user)
-    return db.query(models.Message).filter(models.Message.request_id == request_id).order_by(models.Message.timestamp.asc()).all()
+async def get_messages(request_id: str, current_user: models.User = Depends(auth.get_current_user)):
+    await _verify_chat_access(request_id, current_user)
+    return await models.Message.find(
+        models.Message.request_id == PydanticObjectId(request_id)
+    ).sort("timestamp").to_list()
+
 
 @router.post("/requests/{request_id}/messages", response_model=schemas.MessageOut)
-def create_message(request_id: int, message: schemas.MessageBase, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
-    help_request = _verify_chat_access(request_id, db, current_user)
-    
-    new_msg = models.Message(
-        request_id=request_id,
-        sender_id=current_user.id,
-        content=message.content
-    )
-    db.add(new_msg)
-    db.commit()
-    db.refresh(new_msg)
+async def create_message(request_id: str, message: schemas.MessageBase, current_user: models.User = Depends(auth.get_current_user)):
+    help_request = await _verify_chat_access(request_id, current_user)
 
-    # Create notification for the other user
+    new_msg = models.Message(
+        request_id=PydanticObjectId(request_id),
+        sender_id=current_user.id,
+        content=message.content,
+    )
+    await new_msg.insert()
+
     recipient_id = help_request.helper_id if current_user.id == help_request.student_id else help_request.student_id
     if recipient_id:
-        create_notification(
-            db, recipient_id, "message",
+        await create_notification(
+            recipient_id, "message",
             f"New message in: {help_request.title}",
             f"{current_user.name}: {(message.content or '')[:100]}",
-            related_request_id=request_id
+            related_request_id=help_request.id,
         )
 
-    # Payment detection
     is_payment, amount, keywords, is_screenshot, pay_status = _detect_payment(message.content)
     if is_payment:
-        _save_payment_detection(db, request_id, new_msg.id, current_user.id, amount, keywords, None, pay_status)
+        await _save_payment_detection(help_request.id, new_msg.id, current_user.id, amount, keywords, None, pay_status)
 
     return new_msg
 
+
 @router.post("/requests/{request_id}/messages/upload", response_model=schemas.MessageOut)
 async def create_message_with_attachment(
-    request_id: int,
+    request_id: str,
     file: UploadFile = File(...),
     content: Optional[str] = Form(None),
-    db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(auth.get_current_user)
+    current_user: models.User = Depends(auth.get_current_user),
 ):
-    help_request = _verify_chat_access(request_id, db, current_user)
+    help_request = await _verify_chat_access(request_id, current_user)
 
-    # Validate file extension
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"File type '{ext}' is not allowed.")
 
-    # Save file
     unique_name = f"{uuid.uuid4()}{ext}"
     save_path = os.path.join("uploads", "chat", unique_name)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -166,30 +158,26 @@ async def create_message_with_attachment(
     attachment_url = f"/uploads/chat/{unique_name}"
 
     new_msg = models.Message(
-        request_id=request_id,
+        request_id=PydanticObjectId(request_id),
         sender_id=current_user.id,
         content=content,
-        attachment=attachment_url
+        attachment=attachment_url,
     )
-    db.add(new_msg)
-    db.commit()
-    db.refresh(new_msg)
+    await new_msg.insert()
 
-    # Create notification for the other user
     recipient_id = help_request.helper_id if current_user.id == help_request.student_id else help_request.student_id
     if recipient_id:
         msg_preview = content[:100] if content else "Sent an attachment"
-        create_notification(
-            db, recipient_id, "message",
+        await create_notification(
+            recipient_id, "message",
             f"New message in: {help_request.title}",
             f"{current_user.name}: {msg_preview}",
-            related_request_id=request_id
+            related_request_id=help_request.id,
         )
 
-    # Payment detection
     is_payment, amount, keywords, is_screenshot, pay_status = _detect_payment(content, attachment_url)
     if is_payment:
         screenshot = attachment_url if is_screenshot else None
-        _save_payment_detection(db, request_id, new_msg.id, current_user.id, amount, keywords, screenshot, pay_status)
+        await _save_payment_detection(help_request.id, new_msg.id, current_user.id, amount, keywords, screenshot, pay_status)
 
     return new_msg

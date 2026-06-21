@@ -1,0 +1,11 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\irajv\\Desktop\\assignemt app']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [11456] using WatchFiles
+INFO:     Started server process [11612]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNINWARNING:  WatchFiles detected changes in 'models.py'. Reloading...
+WARNING:  WatchFiles detected changes in 'models.py'. Reloading...
+INFO:     Started server process [17796]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

@@ -12,9 +12,19 @@
 </head>
 
 <body class="admin-body">
-    <!-- Mobile Sidebar Toggle -->
     <button class="sidebar-toggle" id="sidebarToggle"><i class="fas fa-bars"></i></button>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Detail Modal -->
+    <div class="modal-backdrop" id="modalBackdrop">
+        <div class="modal-box" id="modalBox">
+            <div class="modal-header">
+                <h3 id="modalTitle">Details</h3>
+                <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
 
     <div class="admin-wrapper">
         <!-- Sidebar -->
@@ -32,7 +42,10 @@
                     <i class="fas fa-users"></i> User Management
                 </a>
                 <a href="#" class="nav-item" data-section="requests">
-                    <i class="fas fa-file-invoice"></i> Request Monitoring
+                    <i class="fas fa-file-invoice"></i> Service Requests
+                </a>
+                <a href="#" class="nav-item" data-section="chats">
+                    <i class="fas fa-comments"></i> Chat Monitor
                 </a>
                 <a href="#" class="nav-item" data-section="payments">
                     <i class="fas fa-rupee-sign"></i> Payment Tracking
@@ -40,14 +53,11 @@
                 <a href="#" class="nav-item" data-section="disputes">
                     <i class="fas fa-gavel"></i> Disputes
                 </a>
-                <a href="#" class="nav-item" data-section="marketplace">
-                    <i class="fas fa-store"></i> Notes Marketplace
-                </a>
-                <a href="#" class="nav-item" data-section="analytics">
-                    <i class="fas fa-chart-bar"></i> Analytics
-                </a>
                 <a href="#" class="nav-item" data-section="logs">
                     <i class="fas fa-history"></i> Activity Logs
+                </a>
+                <a href="#" class="nav-item" data-section="marketplace">
+                    <i class="fas fa-store"></i> Notes Marketplace
                 </a>
                 <a href="#" class="nav-item" data-section="settings">
                     <i class="fas fa-cog"></i> System Settings
@@ -79,31 +89,46 @@
             </header>
 
             <div id="dynamicContent" class="dynamic-content">
-                <!-- Overview Section -->
+
+                <!-- ===== OVERVIEW ===== -->
                 <section id="overview" class="section active">
                     <div class="stats-grid">
-                        <div class="stat-card clickable" data-section="users" id="cardTotalUsers">
+                        <div class="stat-card clickable" data-section="users">
                             <div class="stat-icon blue"><i class="fas fa-users"></i></div>
                             <div class="stat-info">
                                 <h3>Total Users</h3>
                                 <p id="statTotalUsers">0</p>
                             </div>
                         </div>
-                        <div class="stat-card clickable" data-section="users" id="cardHelpers">
+                        <div class="stat-card clickable" data-section="users">
                             <div class="stat-icon green"><i class="fas fa-user-graduate"></i></div>
                             <div class="stat-info">
                                 <h3>Active Helpers</h3>
                                 <p id="statHelpers">0</p>
                             </div>
                         </div>
-                        <div class="stat-card clickable" data-section="requests" id="cardRequests">
+                        <div class="stat-card clickable" data-section="requests">
                             <div class="stat-icon orange"><i class="fas fa-tasks"></i></div>
                             <div class="stat-info">
                                 <h3>Active Requests</h3>
                                 <p id="statRequests">0</p>
                             </div>
                         </div>
-                        <div class="stat-card clickable" data-section="payments" id="cardRevenue">
+                        <div class="stat-card clickable" data-section="requests">
+                            <div class="stat-icon purple"><i class="fas fa-check-circle"></i></div>
+                            <div class="stat-info">
+                                <h3>Completed</h3>
+                                <p id="statCompleted">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card clickable" data-section="users">
+                            <div class="stat-icon yellow"><i class="fas fa-user-clock"></i></div>
+                            <div class="stat-info">
+                                <h3>Pending Verify</h3>
+                                <p id="statPending">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card clickable" data-section="payments">
                             <div class="stat-icon indigo"><i class="fas fa-rupee-sign"></i></div>
                             <div class="stat-info">
                                 <h3>Revenue</h3>
@@ -115,157 +140,263 @@
                     <div class="dashboard-grid">
                         <div class="grid-card recent-activity">
                             <div class="card-header">
-                                <h2>Recent System Logs</h2>
-                                <button class="btn btn-sm btn-outline">View All</button>
+                                <h2>Recent Activity</h2>
+                                <button class="btn btn-sm btn-outline" onclick="switchToSection('logs')">View All</button>
                             </div>
                             <div class="activity-list" id="recentLogs">
                                 <p class="loading">Loading logs...</p>
                             </div>
                         </div>
-                        <div class="grid-card quick-actions">
-                            <div class="card-header">
-                                <h2>Quick Actions</h2>
-                            </div>
+                        <div class="grid-card">
+                            <div class="card-header"><h2>Quick Actions</h2></div>
                             <div class="action-buttons">
-                                <button class="btn btn-primary btn-block"><i class="fas fa-plus"></i> Broadcast
-                                    Message</button>
-                                <button class="btn btn-outline btn-block"><i class="fas fa-user-plus"></i> Manual
-                                    Verification</button>
-                                <button class="btn btn-outline btn-block"><i class="fas fa-download"></i> Export
-                                    Analytics</button>
+                                <button class="btn btn-primary btn-block" onclick="switchToSection('users')"><i class="fas fa-users"></i> Manage Users</button>
+                                <button class="btn btn-outline btn-block" onclick="switchToSection('requests')"><i class="fas fa-tasks"></i> View Requests</button>
+                                <button class="btn btn-outline btn-block" onclick="switchToSection('chats')"><i class="fas fa-comments"></i> Monitor Chats</button>
+                                <button class="btn btn-outline btn-block" onclick="switchToSection('disputes')"><i class="fas fa-gavel"></i> Resolve Disputes</button>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <!-- Users Section -->
+                <!-- ===== USERS ===== -->
                 <section id="users" class="section">
                     <div class="table-container">
                         <div class="table-header">
-                            <h2>Users Repository</h2>
+                            <h2>User Repository</h2>
                             <div class="filters">
-                                <select id="roleFilter">
+                                <input type="text" id="userSearch" placeholder="Search name/email..." class="filter-input" oninput="filterUsers()">
+                                <select id="roleFilter" onchange="filterUsers()">
                                     <option value="">All Roles</option>
                                     <option value="student">Student</option>
                                     <option value="helper">Helper</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                                <select id="verifiedFilter" onchange="filterUsers()">
+                                    <option value="">All Status</option>
+                                    <option value="verified">Verified</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="suspended">Suspended</option>
                                 </select>
                             </div>
                         </div>
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
-                                    <th>Password</th>
-                                    <th>Role</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="usersTableBody">
-                                <!-- Data will be injected here -->
-                            </tbody>
-                        </table>
+                        <div style="overflow-x:auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Role</th>
+                                        <th>Rating</th>
+                                        <th>Tasks</th>
+                                        <th>Joined</th>
+                                        <th>Status</th>
+                                        <th>Password</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTableBody">
+                                    <tr><td colspan="11" class="loading">Loading users...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 
-                <!-- Requests Section -->
+                <!-- ===== SERVICE REQUESTS ===== -->
                 <section id="requests" class="section">
                     <div class="table-container">
                         <div class="table-header">
                             <h2>Service Requests</h2>
                             <div class="filters">
-                                <select id="requestStatusFilter">
+                                <input type="text" id="requestSearch" placeholder="Search title/subject..." class="filter-input" oninput="filterRequests()">
+                                <select id="requestStatusFilter" onchange="filterRequests()">
+                                    <option value="">All Status</option>
+                                    <option value="open">Open</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="overflow-x:auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Title</th>
+                                        <th>Subject</th>
+                                        <th>Student</th>
+                                        <th>Helper</th>
+                                        <th>Budget</th>
+                                        <th>Deadline</th>
+                                        <th>Status</th>
+                                        <th>Posted</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="requestsTableBody">
+                                    <tr><td colspan="10" class="loading">Loading requests...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== CHAT MONITOR ===== -->
+                <section id="chats" class="section">
+                    <div class="chat-layout">
+                        <div class="chat-list-panel">
+                            <div class="chat-list-header">
+                                <h2><i class="fas fa-comments"></i> Conversations</h2>
+                                <input type="text" id="chatSearch" placeholder="Search requests..." class="filter-input" oninput="filterChatList()">
+                                <select id="chatStatusFilter" onchange="filterChatList()" style="margin-top:0.5rem; width:100%;">
                                     <option value="">All Status</option>
                                     <option value="open">Open</option>
                                     <option value="in_progress">In Progress</option>
                                     <option value="completed">Completed</option>
                                 </select>
                             </div>
+                            <div id="chatRequestList" class="chat-request-list">
+                                <p class="loading" style="padding:1rem;">Loading conversations...</p>
+                            </div>
                         </div>
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Subject</th>
-                                    <th>Student</th>
-                                    <th>Helper</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="requestsTableBody">
-                                <tr>
-                                    <td colspan="6" class="loading">Loading requests...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div class="chat-viewer-panel" id="chatViewerPanel">
+                            <div class="chat-viewer-placeholder" id="chatPlaceholder">
+                                <i class="fas fa-comments"></i>
+                                <p>Select a conversation to view chat history</p>
+                            </div>
+                            <div class="chat-messages-header" id="chatMessagesHeader" style="display:none;">
+                                <div class="chat-header-info">
+                                    <h3 id="chatRequestTitle"></h3>
+                                    <small id="chatRequestMeta"></small>
+                                </div>
+                                <span class="badge" id="chatRequestStatus"></span>
+                            </div>
+                            <div id="chatMessages" class="chat-messages-body"></div>
+                        </div>
                     </div>
                 </section>
 
-                <!-- Payment Tracking Section -->
+                <!-- ===== PAYMENT TRACKING ===== -->
                 <section id="payments" class="section">
                     <div class="table-container">
                         <div class="table-header">
-                            <h2><i class="fas fa-robot" style="color: var(--primary, #2563eb); margin-right: 0.5rem;"></i>AI Payment Detection</h2>
+                            <h2><i class="fas fa-robot" style="color:var(--primary,#2563eb);margin-right:0.5rem;"></i>AI Payment Detection</h2>
+                            <div class="filters">
+                                <select id="paymentStatusFilter" onchange="filterPayments()">
+                                    <option value="">All</option>
+                                    <option value="initiated">Initiated</option>
+                                    <option value="confirmed">Confirmed</option>
+                                </select>
+                            </div>
                         </div>
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Request</th>
-                                    <th>Sender</th>
-                                    <th>Amount</th>
-                                    <th>Status</th>
-                                    <th>Keywords</th>
-                                    <th>Screenshot</th>
-                                    <th>Detected At</th>
-                                </tr>
-                            </thead>
-                            <tbody id="paymentsTableBody">
-                                <tr>
-                                    <td colspan="8" class="loading">Loading payment detections...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div style="overflow-x:auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Request</th>
+                                        <th>Sender</th>
+                                        <th>Message</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                        <th>Keywords</th>
+                                        <th>Screenshot</th>
+                                        <th>Detected At</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="paymentsTableBody">
+                                    <tr><td colspan="9" class="loading">Loading payment detections...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 
-                <!-- Disputes Section -->
+                <!-- ===== DISPUTES ===== -->
                 <section id="disputes" class="section">
                     <div class="table-container">
                         <div class="table-header">
                             <h2>Disputes Management</h2>
+                            <div class="filters">
+                                <select id="disputeStatusFilter" onchange="filterDisputes()">
+                                    <option value="">All</option>
+                                    <option value="open">Open</option>
+                                    <option value="resolved">Resolved</option>
+                                </select>
+                            </div>
                         </div>
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Request</th>
-                                    <th>Raised By</th>
-                                    <th>Reason</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="disputesTableBody">
-                                <tr>
-                                    <td colspan="6" class="loading">Loading disputes...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div style="overflow-x:auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Request</th>
+                                        <th>Raised By</th>
+                                        <th>Reason</th>
+                                        <th>Admin Notes</th>
+                                        <th>Status</th>
+                                        <th>Raised On</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="disputesTableBody">
+                                    <tr><td colspan="8" class="loading">Loading disputes...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 
-                <!-- Marketplace Section -->
+                <!-- ===== ACTIVITY LOGS ===== -->
+                <section id="logs" class="section">
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h2>Full Activity Logs</h2>
+                            <div class="filters">
+                                <input type="text" id="logSearch" placeholder="Search action/user..." class="filter-input" oninput="filterLogs()">
+                                <select id="logActionFilter" onchange="filterLogs()">
+                                    <option value="">All Actions</option>
+                                    <option value="login">Login</option>
+                                    <option value="logout">Logout</option>
+                                    <option value="register">Register</option>
+                                    <option value="verify_user">Verify User</option>
+                                    <option value="suspend_user">Suspend User</option>
+                                    <option value="delete_user">Delete User</option>
+                                    <option value="resolve_dispute">Resolve Dispute</option>
+                                    <option value="update_settings">Update Settings</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="overflow-x:auto;">
+                            <table class="admin-table" id="logsTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Action</th>
+                                        <th>Details</th>
+                                        <th>Timestamp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logsTableBody">
+                                    <tr><td colspan="6" class="loading">Loading system logs...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== MARKETPLACE ===== -->
                 <section id="marketplace" class="section">
                     <div class="dashboard-grid">
                         <div class="grid-card">
-                            <div class="card-header">
-                                <h2>Upload New Item</h2>
-                            </div>
-                            <form id="marketplaceForm" class="settings-form" style="padding: 1rem;">
+                            <div class="card-header"><h2>Upload New Item</h2></div>
+                            <form id="marketplaceForm" class="settings-form" style="padding:1rem;">
                                 <div class="form-group">
                                     <label>Title</label>
                                     <input type="text" id="marketTitle" required>
@@ -290,12 +421,11 @@
                                     <label>File (PDF, Image, Doc)</label>
                                     <input type="file" id="marketFile" required>
                                 </div>
-                                <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Upload to Marketplace <i class="fas fa-upload"></i></button>
+                                <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Upload to Marketplace <i class="fas fa-upload"></i></button>
                             </form>
                         </div>
-                        
-                        <div class="grid-card" style="grid-column: span 1 / span 2;">
-                            <div class="table-header">
+                        <div class="grid-card" style="grid-column: span 2;">
+                            <div class="table-header" style="padding:0 0 1rem 0; border:none;">
                                 <h2>Current Marketplace Items</h2>
                             </div>
                             <table class="admin-table">
@@ -310,68 +440,43 @@
                                     </tr>
                                 </thead>
                                 <tbody id="marketplaceTableBody">
-                                    <tr>
-                                        <td colspan="6" class="loading">Loading marketplace items...</td>
-                                    </tr>
+                                    <tr><td colspan="6" class="loading">Loading marketplace items...</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </section>
 
-                <!-- Analytics Section -->
-                <section id="analytics" class="section">
-                    <div class="dashboard-grid">
-                        <div class="grid-card">
-                            <div class="card-header">
-                                <h2>Registration Trends</h2>
-                            </div>
-                            <div
-                                style="height: 200px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; border-radius: 8px;">
-                                <p>Interactive Chart Placeholder</p>
-                            </div>
-                        </div>
-                        <div class="grid-card">
-                            <div class="card-header">
-                                <h2>Popular Subjects</h2>
-                            </div>
-                            <div id="popularSubjects" class="activity-list">
-                                <p class="loading">Loading analytics...</p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Logs Section -->
-                <section id="logs" class="section">
-                    <div class="table-container">
-                        <div class="table-header">
-                            <h2>Full Activity Logs</h2>
-                        </div>
-                        <div id="logsList" style="padding: 1.5rem; max-height: 500px; overflow-y: auto;">
-                            <p class="loading">Loading system logs...</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Settings Section -->
+                <!-- ===== SETTINGS ===== -->
                 <section id="settings" class="section">
-                    <div class="settings-form">
-                        <div class="form-group">
-                            <label>Allowed Email Domain</label>
-                            <input type="text" id="settingEmailDomain" placeholder="cvru.ac.in">
+                    <div class="grid-card" style="max-width:600px;">
+                        <div class="card-header"><h2>System Settings</h2></div>
+                        <div class="settings-form" style="padding:0;">
+                            <div class="form-group">
+                                <label>Allowed Email Domain</label>
+                                <input type="text" id="settingEmailDomain" placeholder="cvru.ac.in">
+                            </div>
+                            <div class="form-group">
+                                <label>Commission Percentage (%)</label>
+                                <input type="number" id="settingCommission" value="10">
+                            </div>
+                            <div class="form-group">
+                                <label>Platform Notice</label>
+                                <textarea id="settingNotice" rows="3" placeholder="Leave blank for none"></textarea>
+                            </div>
+                            <div class="form-group" style="display:flex; align-items:center; gap:1rem;">
+                                <label style="margin:0;">Payment System Enabled</label>
+                                <input type="checkbox" id="settingPaymentEnabled" style="width:auto;">
+                            </div>
+                            <div class="form-group" style="display:flex; align-items:center; gap:1rem;">
+                                <label style="margin:0;">Admin Approval Required</label>
+                                <input type="checkbox" id="settingAdminApproval" style="width:auto;">
+                            </div>
+                            <button id="saveSettings" class="btn btn-primary" style="margin-top:1rem;">Save Changes</button>
                         </div>
-                        <div class="form-group">
-                            <label>Commission Percentage (%)</label>
-                            <input type="number" id="settingCommission" value="10">
-                        </div>
-                        <div class="form-group">
-                            <label>Platform Notice</label>
-                            <textarea id="settingNotice" rows="3"></textarea>
-                        </div>
-                        <button id="saveSettings" class="btn btn-primary">Save Changes</button>
                     </div>
                 </section>
+
             </div>
         </main>
     </div>

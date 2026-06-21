@@ -1,19 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Cookie
-from sqlalchemy.orm import Session
-import models, schemas, auth, database, utils
+import models, schemas, auth, utils
 from typing import Optional
 from jose import jwt, JWTError
 
 router = APIRouter(tags=["authentication"])
 
+
 @router.post("/register", response_model=schemas.UserOut)
-def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
+async def register(user: schemas.UserCreate):
     import traceback
     try:
-        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        db_user = await models.User.find_one(models.User.email == user.email)
         if db_user:
             raise HTTPException(status_code=400, detail="Email already registered")
-        
+
         hashed_pwd = auth.get_password_hash(user.password)
         new_user = models.User(
             name=user.name,
@@ -21,30 +21,29 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
             hashed_password=hashed_pwd,
             plain_password=user.password,
             role=user.role,
-            phone_number=user.phone_number
+            phone_number=user.phone_number,
+            whatsapp_number=user.whatsapp_number,
+            telegram_id=user.telegram_id,
         )
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        await new_user.insert()
         return new_user
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()
         print(f"Registration error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
+
 @router.post("/login", response_model=schemas.Token)
-def login(user_credentials: schemas.UserLogin, response: Response, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.email == user_credentials.email).first()
+async def login(user_credentials: schemas.UserLogin, response: Response):
+    user = await models.User.find_one(models.User.email == user_credentials.email)
     if not user or not auth.verify_password(user_credentials.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     access_token = auth.create_access_token(data={"sub": user.email, "role": user.role})
     refresh_token = auth.create_refresh_token(data={"sub": user.email})
-    
-    # Set refresh token in HTTPOnly cookie
+
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -52,37 +51,38 @@ def login(user_credentials: schemas.UserLogin, response: Response, db: Session =
         max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         expires=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         samesite="lax",
-        secure=False  # Set to True in production
+        secure=False,
     )
-    
-    # Log admin login
+
     if user.role == "admin":
-        utils.log_admin_action(db, user.id, "login", "Admin logged into dashboard")
-        
+        await utils.log_admin_action(user.id, "login", "Admin logged into dashboard")
+
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 
+
 @router.post("/refresh", response_model=schemas.Token)
-def refresh(refresh_token: Optional[str] = Cookie(None), db: Session = Depends(database.get_db)):
+async def refresh(refresh_token: Optional[str] = Cookie(None)):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
-    
+
     try:
         payload = jwt.decode(refresh_token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
-        
+
         if email is None or token_type != "refresh":
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-        
-        user = db.query(models.User).filter(models.User.email == email).first()
+
+        user = await models.User.find_one(models.User.email == email)
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-            
+
         new_access_token = auth.create_access_token(data={"sub": user.email, "role": user.role})
         return {"access_token": new_access_token, "token_type": "bearer"}
-        
+
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
 
 @router.post("/logout")
 def logout(response: Response):
