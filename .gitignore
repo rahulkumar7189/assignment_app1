@@ -1,0 +1,43 @@
+# Environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyo
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Uploads (user-generated content)
+uploads/
+
+# Logs
+server.log
+server_err.log
+*.log
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Windows
+Thumbs.db

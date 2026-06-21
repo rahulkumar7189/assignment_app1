@@ -27,10 +27,20 @@ def _ensure_runtime_directories() -> None:
 
 async def _create_default_admins() -> None:
     admins = [
-        {"name": "Platform Administrator", "email": "admin@cvru.ac.in", "password": "admin@123"},
-        {"name": "Platform Administrator 82", "email": "admin82@cvrcp.ac.in", "password": "admin82@cgu"},
+        {
+            "name": "Platform Administrator",
+            "email": os.getenv("ADMIN_1_EMAIL", ""),
+            "password": os.getenv("ADMIN_1_PASSWORD", ""),
+        },
+        {
+            "name": "Platform Administrator 2",
+            "email": os.getenv("ADMIN_2_EMAIL", ""),
+            "password": os.getenv("ADMIN_2_PASSWORD", ""),
+        },
     ]
     for admin_info in admins:
+        if not admin_info["email"] or not admin_info["password"]:
+            continue
         existing = await models.User.find_one(models.User.email == admin_info["email"])
         if existing:
             continue
