@@ -452,80 +452,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ===== GLOBAL UI HANDLERS =====
-    window.unlockContact = async (requestId) => {
-        // Show disclaimer modal first — user must confirm before Razorpay opens
-        const disclaimerModal = document.getElementById('unlockDisclaimerModal');
-        if (disclaimerModal) {
-            disclaimerModal.style.display = 'flex';
-        }
+    window.unlockContact = (requestId) => {
+        // Set the request_id note on the hidden form input
+        const noteInput = document.getElementById('rzpRequestIdNote');
+        if (noteInput) noteInput.value = requestId;
 
-        document.getElementById('unlockProceedBtn').onclick = async () => {
-            if (disclaimerModal) disclaimerModal.style.display = 'none';
-            await _openRazorpayUnlock(requestId);
-        };
+        // Store requestId for the form submit handler
+        const form = document.getElementById('rzpPaymentButtonForm');
+        if (form) form.dataset.requestId = requestId;
+
+        // Show disclaimer + payment button modal
+        const disclaimerModal = document.getElementById('unlockDisclaimerModal');
+        if (disclaimerModal) disclaimerModal.style.display = 'flex';
     };
 
-    async function _openRazorpayUnlock(requestId) {
-        // 1. Get the Razorpay public key
-        const config = await apiFetch('/payments/config');
-        if (!config || !config.key_id || config.key_id.includes('XXXX')) {
-            alert('Payment gateway is not yet configured. Please contact the administrator.');
-            return;
-        }
+    // Intercept Razorpay Payment Button form submit (fires after successful payment)
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('rzpPaymentButtonForm');
+        if (!form) return;
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = new FormData(form);
+            const requestId = form.dataset.requestId;
+            const payload = {
+                razorpay_payment_link_id:              data.get('razorpay_payment_link_id')              || '',
+                razorpay_payment_link_reference_id:    data.get('razorpay_payment_link_reference_id')    || '',
+                razorpay_payment_id:                   data.get('razorpay_payment_id')                   || '',
+                razorpay_signature:                    data.get('razorpay_signature')                    || '',
+                request_id:                            requestId,
+            };
+            // Close disclaimer modal
+            const disclaimerModal = document.getElementById('unlockDisclaimerModal');
+            if (disclaimerModal) disclaimerModal.style.display = 'none';
 
-        // 2. Create ₹20 Razorpay order on the backend
-        const orderData = await apiFetch('/payments/create-order', {
-            method: 'POST',
-            body: JSON.stringify({ request_id: requestId })
+            const verifyRes = await apiFetch('/payments/verify-button', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+            if (verifyRes && verifyRes.success) {
+                const modal = document.getElementById('paymentModal');
+                if (modal) modal.style.display = 'flex';
+                else location.reload();
+            } else {
+                alert('Payment verification failed. Please contact support.');
+            }
         });
-        if (!orderData) return;
-
-        // 3. Read current user info for prefill
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-
-        // 4. Open Razorpay Checkout (always ₹20 = 2000 paise)
-        const options = {
-            key: config.key_id,
-            amount: 2000,
-            currency: 'INR',
-            name: 'AcadMate',
-            description: `Unlock contact: ${orderData.request_title}`,
-            image: 'https://ui-avatars.com/api/?name=AcadMate&background=4f46e5&color=fff&size=80',
-            order_id: orderData.razorpay_order_id,
-            handler: async function (response) {
-                // 5. Verify signature on backend — sets contact_unlocked = true
-                const verifyRes = await apiFetch('/payments/verify', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        razorpay_order_id:   response.razorpay_order_id,
-                        razorpay_payment_id: response.razorpay_payment_id,
-                        razorpay_signature:  response.razorpay_signature,
-                        request_id:          requestId
-                    })
-                });
-                if (verifyRes && verifyRes.success) {
-                    const modal = document.getElementById('paymentModal');
-                    if (modal) modal.style.display = 'flex';
-                    else location.reload();
-                } else {
-                    alert('Payment verification failed. Please contact support.');
-                }
-            },
-            prefill: {
-                name:    user.name    || '',
-                email:   user.email   || '',
-                contact: user.phone_number || ''
-            },
-            theme:  { color: '#4f46e5' },
-            modal:  { backdropclose: false }
-        };
-
-        const rzp = new window.Razorpay(options);
-        rzp.on('payment.failed', function (resp) {
-            alert(`Payment failed: ${resp.error.description}`);
-        });
-        rzp.open();
-    }
+    });
 
     window.acceptRequest = async (id) => {
         const res = await apiFetch(`/requests/${id}/accept`, { method: 'PUT' });

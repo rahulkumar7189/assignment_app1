@@ -278,6 +278,14 @@ class PaymentVerifyResponse(BaseModel):
     amount_paid: float
 
 
+class PaymentButtonVerifyRequest(BaseModel):
+    razorpay_payment_link_id: str
+    razorpay_payment_link_reference_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    request_id: str
+
+
 class RazorpayOrderOut(BaseModel):
     id: PyObjectId
     request_id: Optional[PyObjectId] = None

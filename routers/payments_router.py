@@ -1,10 +1,11 @@
 """
 Razorpay payment integration — ₹20 contact-unlock fee model.
-  - /payments/config        — public: return key_id for checkout
-  - /payments/create-order  — student creates ₹20 Razorpay order
-  - /payments/verify        — verify signature, unlock contact details
-  - /payments/history       — student sees their payment history
-  - /payments/admin/orders  — admin sees all contact-unlock transactions
+  - /payments/config          — public: return key_id for checkout
+  - /payments/create-order    — student creates ₹20 Razorpay order (Checkout.js)
+  - /payments/verify          — verify Checkout.js signature, unlock contact
+  - /payments/verify-button   — verify Payment Button signature, unlock contact
+  - /payments/history         — student sees their payment history
+  - /payments/admin/orders    — admin sees all contact-unlock transactions
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -155,6 +156,85 @@ async def verify_payment(
     await utils.log_admin_action(
         current_user.id, "contact_unlock_payment",
         f"₹{CONTACT_UNLOCK_FEE} paid — Contact unlocked for Request #{str(db_order.request_id)}"
+    )
+
+    return schemas.PaymentVerifyResponse(
+        success=True,
+        message="Payment verified. Contact details are now unlocked!",
+        amount_paid=CONTACT_UNLOCK_FEE,
+    )
+
+
+# ── Verify Payment Button ────────────────────────────────────────────────────
+
+@payments_router.post("/verify-button", response_model=schemas.PaymentVerifyResponse)
+async def verify_button_payment(
+    payload: schemas.PaymentButtonVerifyRequest,
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    client = _rzp()
+
+    # 1. Verify Payment Button signature
+    try:
+        client.utility.verify_payment_link_signature({
+            "razorpay_payment_link_id":               payload.razorpay_payment_link_id,
+            "razorpay_payment_link_reference_id":      payload.razorpay_payment_link_reference_id,
+            "razorpay_payment_link_status":            "paid",
+            "razorpay_payment_id":                     payload.razorpay_payment_id,
+            "razorpay_signature":                      payload.razorpay_signature,
+        })
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payment signature verification failed — possible tampering")
+
+    # 2. Resolve request
+    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(payload.request_id))
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.student_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your request")
+    if req.contact_unlocked:
+        raise HTTPException(status_code=400, detail="Contact already unlocked")
+
+    # 3. Unlock contact
+    req.contact_unlocked = True
+    await req.save()
+
+    # 4. Record the order
+    db_order = models.RazorpayOrder(
+        request_id=req.id,
+        student_id=current_user.id,
+        razorpay_order_id=payload.razorpay_payment_link_id,
+        amount=CONTACT_UNLOCK_FEE,
+        status="paid",
+        razorpay_payment_id=payload.razorpay_payment_id,
+        paid_at=datetime.utcnow(),
+    )
+    await db_order.insert()
+
+    # 5. Notify helper
+    if req.helper_id:
+        helper = await models.User.find_one(models.User.id == req.helper_id)
+        if helper:
+            await models.Notification(
+                user_id=helper.id,
+                type="contact_unlock",
+                title="Contact Details Unlocked",
+                message=f"A student has unlocked your contact details for request '{req.title}'.",
+                related_request_id=req.id,
+            ).insert()
+
+    # 6. Notify student
+    await models.Notification(
+        user_id=current_user.id,
+        type="contact_unlock",
+        title="Contact Details Unlocked!",
+        message=f"You have successfully unlocked the helper's contact details for '{req.title}'.",
+        related_request_id=req.id,
+    ).insert()
+
+    await utils.log_admin_action(
+        current_user.id, "contact_unlock_payment",
+        f"₹{CONTACT_UNLOCK_FEE} paid via Payment Button — Contact unlocked for Request #{str(req.id)}"
     )
 
     return schemas.PaymentVerifyResponse(
