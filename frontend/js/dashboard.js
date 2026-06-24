@@ -1,6 +1,5 @@
 /**
- * AcadMate Dashboard Logic (Student & Helper)
- * Updated: Chat persistence, real-time messaging, notifications, file attachments.
+ * AcadMate Dashboard Logic (Student & Helper) — Anonymous Escrow Model
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -10,52 +9,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     const BASE_URL_ROOT = IS_LOCAL ? 'http://localhost:8000' : 'https://assignment-app1-gdya.onrender.com';
     let socket;
     let currentChatId = null;
-    let allRequests = []; // Store requests for socket room joining
+    let allRequests = [];
     let notifPollInterval = null;
 
-    // Initial Session Validation
+    // State for active payment / submission flows
+    let _activeRequestId = null;
+
+    // ── Session Validation ────────────────────────────────────────────────────
     async function validateSession() {
         const userStr = localStorage.getItem('user');
         const token = localStorage.getItem('access_token');
-
-        if (!userStr || !token) {
-            window.location.href = 'login.html';
-            return;
-        }
+        if (!userStr || !token) { window.location.href = 'login.html'; return; }
 
         try {
             const verifiedUser = await apiFetch('/users/me');
             if (!verifiedUser) return;
-
             localStorage.setItem('user', JSON.stringify(verifiedUser));
             setupDashboard(verifiedUser);
         } catch (err) {
-            console.error('Session validation failed', err);
             window.location.href = 'login.html';
         }
     }
 
+    // ── API Helper ────────────────────────────────────────────────────────────
     async function apiFetch(url, options = {}) {
         let token = localStorage.getItem('access_token');
-
         const headers = {
             'Authorization': `Bearer ${token}`,
             ...(options.headers || {})
         };
-
         if (options.body && !(options.body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
         }
-
         const fetchOptions = {
             ...options,
             headers,
-            body: options.body instanceof FormData ? options.body : (options.body ? JSON.stringify(options.body) : undefined)
+            body: options.body instanceof FormData
+                ? options.body
+                : (options.body ? JSON.stringify(options.body) : undefined)
         };
 
         try {
             let response = await fetch(`${API_BASE_URL}${url}`, fetchOptions);
-
             if (response.status === 401) {
                 const refreshed = await attemptTokenRefresh();
                 if (refreshed) {
@@ -68,43 +63,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return null;
                 }
             }
-
             if (!response.ok) {
-                const errorData = await response.json();
+                const errorData = await response.json().catch(() => ({}));
                 console.error(`API Error (${url}):`, errorData.detail || 'Unknown error');
                 return null;
             }
-
             return await response.json();
         } catch (err) {
-            console.error(`Network or Parsing Error (${url}):`, err);
+            console.error(`Network error (${url}):`, err);
             return null;
         }
     }
 
     async function attemptTokenRefresh() {
         try {
-            const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
+            const res = await fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
             if (res.ok) {
                 const data = await res.json();
                 localStorage.setItem('access_token', data.access_token);
                 return true;
             }
-        } catch (err) {
-            console.error('Refresh token request failed', err);
-        }
+        } catch (err) { /* ignore */ }
         return false;
     }
 
+    // ── Dashboard Setup ───────────────────────────────────────────────────────
     function setupDashboard(user) {
         document.getElementById('userName').textContent = `Hello, ${user.name} (${user.role})`;
-        const studentGreeting = document.getElementById('studentGreetingName');
-        const helperGreeting = document.getElementById('helperGreetingName');
-        if (studentGreeting) studentGreeting.textContent = user.name;
-        if (helperGreeting) helperGreeting.textContent = user.name;
+        const sg = document.getElementById('studentGreetingName');
+        const hg = document.getElementById('helperGreetingName');
+        if (sg) sg.textContent = user.name;
+        if (hg) hg.textContent = user.name;
 
         if (user.role === 'student') {
             document.getElementById('studentDashboard').style.display = 'block';
@@ -115,75 +104,43 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchHelperHistory();
         }
 
-        // Initialize Socket.IO
         socket = io(SOCKET_URL);
-        
-        socket.on('connect', () => {
-            console.log('Socket connected:', socket.id);
-            // Join all active chat rooms on connect
-            joinAllChatRooms();
-        });
-
+        socket.on('connect', () => joinAllChatRooms());
         socket.on('new_message', (data) => {
-            // Skip own messages (already appended locally on send)
-            // Use == for type-coercion since socket data types may differ
             if (data.sender_id == user.id) return;
-            
-            if (data.request_id == currentChatId) {
-                // Chat is open - show message immediately
-                appendMessage(data, user.id);
-            }
-            
-            // Always refresh notification count for incoming messages
+            if (data.request_id == currentChatId) appendMessage(data, user.id);
             loadNotificationCount();
         });
-
         socket.on('request_accepted', (data) => {
             const card = document.getElementById(`request-available-${data.request_id}`);
-            if (card) {
-                card.style.opacity = '0';
-                setTimeout(() => {
-                    card.remove();
-                    const container = document.getElementById('availableRequests');
-                    if (container && container.children.length === 0) {
-                        container.innerHTML = '<p style="color: var(--secondary);">No active academic support requests at the moment.</p>';
-                    }
-                }, 300);
-            }
-            // Refresh notifications
+            if (card) { card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
             loadNotificationCount();
         });
 
-        // Start notification polling
         loadNotificationCount();
         notifPollInterval = setInterval(loadNotificationCount, 30000);
     }
 
-    // Join all chat rooms on socket connect
     async function joinAllChatRooms() {
         if (!socket || !socket.connected) return;
         const requests = await apiFetch('/requests/my');
         if (requests && Array.isArray(requests)) {
             allRequests = requests;
             requests.forEach(req => {
-                if (req.student_id && req.helper_id && req.status !== 'cancelled') {
+                if (req.helper_id && req.status !== 'cancelled') {
                     socket.emit('join_room', { request_id: req.id });
                 }
             });
         }
     }
 
-    // ===== NOTIFICATIONS =====
+    // ── Notifications ─────────────────────────────────────────────────────────
     async function loadNotificationCount() {
         const data = await apiFetch('/notifications/unread-count');
         const badge = document.getElementById('notifBadge');
         if (!badge || !data) return;
-        if (data.count > 0) {
-            badge.textContent = data.count > 99 ? '99+' : data.count;
-            badge.style.display = 'block';
-        } else {
-            badge.style.display = 'none';
-        }
+        if (data.count > 0) { badge.textContent = data.count > 99 ? '99+' : data.count; badge.style.display = 'block'; }
+        else badge.style.display = 'none';
     }
 
     async function loadNotifications() {
@@ -191,12 +148,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const list = document.getElementById('notifList');
         if (!list) return;
         list.innerHTML = '';
-
         if (!notifications || notifications.length === 0) {
-            list.innerHTML = '<p style="text-align: center; color: var(--secondary); padding: 2rem;">No notifications yet</p>';
+            list.innerHTML = '<p style="text-align:center;color:var(--secondary);padding:2rem;">No notifications yet</p>';
             return;
         }
-
         notifications.forEach(n => {
             const div = document.createElement('div');
             div.className = `notif-item ${n.is_read ? '' : 'unread'}`;
@@ -206,18 +161,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     div.classList.remove('unread');
                     loadNotificationCount();
                 }
-                // If it's a message notification, open the chat
                 if (n.related_request_id && n.type === 'message') {
-                    const panel = document.getElementById('notificationPanel');
-                    if (panel) panel.classList.remove('show');
+                    document.getElementById('notificationPanel')?.classList.remove('show');
                     window.viewChat(n.related_request_id, n.title.replace('New message in: ', ''));
                 }
             };
-
             const timeAgo = getTimeAgo(new Date(n.created_at));
             const icon = n.type === 'message' ? 'fa-comment' : n.type === 'request_accepted' ? 'fa-check-circle' : 'fa-bell';
             div.innerHTML = `
-                <div class="notif-title"><i class="fas ${icon}" style="margin-right: 0.4rem; color: var(--primary);"></i>${n.title}</div>
+                <div class="notif-title"><i class="fas ${icon}" style="margin-right:0.4rem;color:var(--primary);"></i>${n.title}</div>
                 <div class="notif-msg">${n.message}</div>
                 <div class="notif-time">${timeAgo}</div>
             `;
@@ -226,20 +178,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function getTimeAgo(date) {
-        const seconds = Math.floor((new Date() - date) / 1000);
-        if (seconds < 60) return 'Just now';
-        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-        return `${Math.floor(seconds / 86400)}d ago`;
+        const s = Math.floor((new Date() - date) / 1000);
+        if (s < 60) return 'Just now';
+        if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+        if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+        return `${Math.floor(s / 86400)}d ago`;
     }
 
     window.toggleNotifications = async () => {
         const panel = document.getElementById('notificationPanel');
         if (!panel) return;
         panel.classList.toggle('show');
-        if (panel.classList.contains('show')) {
-            await loadNotifications();
-        }
+        if (panel.classList.contains('show')) await loadNotifications();
     };
 
     window.markAllRead = async () => {
@@ -248,42 +198,143 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadNotifications();
     };
 
-    // Close notification panel when clicking outside
     document.addEventListener('click', (e) => {
         const panel = document.getElementById('notificationPanel');
         const bellBtn = e.target.closest('[title="Notifications"]');
-        if (panel && !panel.contains(e.target) && !bellBtn) {
-            panel.classList.remove('show');
-        }
+        if (panel && !panel.contains(e.target) && !bellBtn) panel.classList.remove('show');
     });
 
-    // ===== ATTACHMENTS =====
+    // ── Attachments ───────────────────────────────────────────────────────────
     function renderAttachments(attachments) {
         if (!attachments || attachments.length === 0) return '';
-        const links = attachments.map((path) => {
+        const links = attachments.map(path => {
             const fileName = path.split('/').pop();
-            return `<a href="https://assignment-app1-gdya.onrender.com${path}" target="_blank" class="attachment-link"><i class="fas fa-file-alt"></i> ${fileName}</a>`;
+            return `<a href="${BASE_URL_ROOT}${path}" target="_blank" class="attachment-link"><i class="fas fa-file-alt"></i> ${fileName}</a>`;
         }).join('');
         return `<div class="attachments-section"><p><strong>Attachments:</strong></p><div class="attachment-grid">${links}</div></div>`;
     }
 
-    // ===== STUDENT DATA =====
+    // ── Status labels ─────────────────────────────────────────────────────────
+    const STATUS_LABEL = {
+        pending_posting_fee: 'Pending ₹9 Fee',
+        open: 'Open — Finding Helper',
+        in_progress: 'In Progress',
+        work_submitted: 'Work Submitted (Admin Review)',
+        awaiting_payment: 'Awaiting Your Payment',
+        completed: 'Completed',
+        cancelled: 'Cancelled',
+    };
+
+    // ── Student action block per status ───────────────────────────────────────
+    function studentActionBlock(req) {
+        switch (req.status) {
+            case 'pending_posting_fee':
+                return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#1e40af;">
+                    <i class="fas fa-exclamation-circle"></i> Pay <strong>&#8377;9</strong> to publish this assignment so helpers can find it.
+                </div>
+                <button onclick="openPostingFeeModal('${req.id}')" class="btn btn-primary" style="width:100%;margin-top:0.75rem;">
+                    <i class="fas fa-rupee-sign"></i> Pay &#8377;9 &amp; Publish
+                </button>`;
+
+            case 'open':
+                return `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#15803d;">
+                    <i class="fas fa-search"></i> Your assignment is live. Waiting for a helper to accept it.
+                </div>`;
+
+            case 'in_progress':
+                return `<div style="background:#fefce8;border:1px solid #fde047;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#713f12;">
+                    <i class="fas fa-hourglass-half"></i> A helper is working on your assignment. You'll be notified when they submit.
+                </div>
+                <button onclick="viewChat('${req.id}', '${escQ(req.title)}')" class="btn btn-outline" style="width:100%;margin-top:0.75rem;"><i class="fas fa-comment"></i> Chat with Helper</button>`;
+
+            case 'work_submitted':
+                return `<div style="background:#fefce8;border:1px solid #fde047;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#713f12;">
+                    <i class="fas fa-clipboard-check"></i> Work submitted. Admin is reviewing it. You'll be notified once approved.
+                </div>`;
+
+            case 'awaiting_payment':
+                return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
+                    <i class="fas fa-check-circle"></i> Work verified by admin! Pay to instantly download your completed assignment.
+                </div>
+                <button onclick="openPayForWorkModal('${req.id}', ${req.budget || 0})" class="btn btn-primary" style="width:100%;margin-top:0.75rem;background:#10b981;">
+                    <i class="fas fa-lock-open"></i> Pay &#8377;${req.budget || '—'} &amp; Download
+                </button>`;
+
+            case 'completed':
+                return req.work_file_available
+                    ? `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
+                        <i class="fas fa-check-circle"></i> Assignment delivered! Download your file below.
+                    </div>
+                    <a href="${API_BASE_URL}/requests/${req.id}/download-work"
+                       class="btn btn-primary"
+                       style="width:100%;margin-top:0.75rem;display:block;text-align:center;text-decoration:none;background:#10b981;"
+                       download>
+                        <i class="fas fa-download"></i> Download Assignment
+                    </a>`
+                    : `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
+                        <i class="fas fa-check-circle"></i> Completed.
+                    </div>`;
+
+            default:
+                return '';
+        }
+    }
+
+    // ── Helper action block per status ────────────────────────────────────────
+    function helperActionBlock(req) {
+        switch (req.status) {
+            case 'in_progress':
+                return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#1e40af;">
+                    <i class="fas fa-pencil-alt"></i> Work on this assignment and upload when done. Do NOT include contact details in the file.
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+                    <button onclick="viewChat('${req.id}', '${escQ(req.title)}')" class="btn btn-outline" style="flex:1;"><i class="fas fa-comment"></i> Chat</button>
+                    <button onclick="openSubmitWorkModal('${req.id}')" class="btn btn-primary" style="flex:1;"><i class="fas fa-upload"></i> Submit Work</button>
+                </div>`;
+
+            case 'work_submitted':
+                return `<div style="background:#fefce8;border:1px solid #fde047;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#713f12;">
+                    <i class="fas fa-clipboard-check"></i> Work submitted — admin reviewing. You'll be notified of the outcome.
+                </div>
+                <button onclick="openSubmitWorkModal('${req.id}')" class="btn btn-outline" style="width:100%;margin-top:0.5rem;font-size:0.8rem;">
+                    <i class="fas fa-redo"></i> Re-submit if rejected
+                </button>`;
+
+            case 'awaiting_payment':
+                return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
+                    <i class="fas fa-hourglass-half"></i> Work approved! Waiting for student to pay. You'll be paid automatically.
+                </div>`;
+
+            case 'completed':
+                return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
+                    <i class="fas fa-rupee-sign"></i> Payment received! Your share (90%) is being transferred to your UPI ID.
+                </div>`;
+
+            default:
+                return '';
+        }
+    }
+
+    function escQ(str) {
+        return (str || '').replace(/'/g, "\\'");
+    }
+
+    // ── Student Data ──────────────────────────────────────────────────────────
     async function fetchStudentData() {
-        // Fetch User Stats
         const stats = await apiFetch('/users/me/stats');
         if (stats) {
             document.getElementById('studentStatTotal').textContent = stats.total_requests;
             document.getElementById('studentStatCompleted').textContent = stats.completed;
             document.getElementById('studentStatOngoing').textContent = stats.ongoing;
-            document.getElementById('studentStatSpent').textContent = `₹${stats.total_spent}`;
+            document.getElementById('studentStatSpent').textContent = '₹' + stats.total_spent;
         }
 
         const requests = await apiFetch('/requests/my');
         if (!requests || !Array.isArray(requests)) return;
-
         allRequests = requests;
+
         const activeContainer = document.getElementById('studentRequests');
-        const emptyStateContainer = document.getElementById('studentRequestsEmpty');
+        const emptyState = document.getElementById('studentRequestsEmpty');
         const historyContainer = document.getElementById('studentHistory');
         if (!activeContainer || !historyContainer) return;
 
@@ -292,117 +343,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         let activeCount = 0;
 
         requests.forEach(req => {
-            const card = document.createElement('div');
-            card.className = 'feature-card';
             const isHistorical = req.status === 'completed' || req.status === 'cancelled';
-            const canUnlock = req.status === 'in_progress' && !req.contact_unlocked;
-
             if (!isHistorical) activeCount++;
 
-            const contactBlock = req.contact_unlocked && req.peer_phone ? `
-                <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:0.5rem;padding:0.75rem;margin:0.5rem 0;font-size:0.88rem;">
-                    <p style="font-weight:700;color:#15803d;margin:0 0 0.4rem;"><i class="fas fa-address-card"></i> Helper Contact</p>
-                    ${req.peer_phone ? `<p style="margin:0.2rem 0;"><i class="fas fa-phone" style="width:16px;"></i> <a href="tel:${req.peer_phone}">${req.peer_phone}</a></p>` : ''}
-                    ${req.peer_email ? `<p style="margin:0.2rem 0;"><i class="fas fa-envelope" style="width:16px;"></i> <a href="mailto:${req.peer_email}">${req.peer_email}</a></p>` : ''}
-                    ${req.peer_whatsapp ? `<p style="margin:0.2rem 0;"><i class="fab fa-whatsapp" style="width:16px;color:#25d366;"></i> ${req.peer_whatsapp}</p>` : ''}
-                    ${req.peer_telegram ? `<p style="margin:0.2rem 0;"><i class="fab fa-telegram" style="width:16px;color:#0088cc;"></i> ${req.peer_telegram}</p>` : ''}
-                </div>` : '';
-
+            const card = document.createElement('div');
+            card.className = 'feature-card';
             card.innerHTML = `
                 <h3>${req.title}</h3>
                 <p><strong>Subject:</strong> ${req.subject}</p>
-                <p><strong>Helper:</strong> ${req.helper_name || 'Finding helper...'}</p>
-                ${contactBlock}
-                <p><strong>Status:</strong> <span class="badge status-${req.status}">${req.status}</span></p>
-                <p>${req.description.substring(0, 100)}...</p>
+                <p><strong>Budget:</strong> &#8377;${req.budget || 'Not set'}</p>
+                ${req.helper_name
+                    ? `<p><strong>Helper:</strong> ${req.helper_name}</p>`
+                    : '<p style="color:var(--secondary);font-size:0.85rem;"><i class="fas fa-clock"></i> No helper yet</p>'}
+                <p><strong>Status:</strong> <span class="badge status-${req.status}">${STATUS_LABEL[req.status] || req.status}</span></p>
+                <p style="font-size:0.88rem;color:var(--secondary);">${(req.description || '').substring(0, 100)}${(req.description || '').length > 100 ? '…' : ''}</p>
                 ${renderAttachments(req.attachments)}
-                <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                    <button onclick="viewChat(${req.id}, '${req.title.replace(/'/g, "\\'")})" class="btn btn-outline" style="flex: 1;">Chat</button>
-                    ${canUnlock ? `<button onclick="unlockContact('${req.id}')" class="btn btn-primary" style="flex: 1; background-color: #059669;"><i class="fas fa-unlock"></i> Unlock Contact &#8377;20</button>` : ''}
-                    ${!isHistorical && req.status === 'in_progress' ? `<button onclick="markCompleted(${req.id})" class="btn btn-primary" style="flex: 1;">Complete</button>` : ''}
-                </div>
+                ${studentActionBlock(req)}
             `;
+
             if (isHistorical) historyContainer.appendChild(card);
             else activeContainer.appendChild(card);
         });
 
-        if (activeCount === 0 && emptyStateContainer) {
-            emptyStateContainer.style.display = 'block';
+        if (activeCount === 0 && emptyState) {
+            emptyState.style.display = 'block';
             activeContainer.style.display = 'none';
-        } else if (emptyStateContainer) {
-            emptyStateContainer.style.display = 'none';
+        } else if (emptyState) {
+            emptyState.style.display = 'none';
             activeContainer.style.display = 'grid';
         }
 
-        if (historyContainer.innerHTML === '') historyContainer.innerHTML = '<p style="color: var(--secondary);">No history yet.</p>';
+        if (!historyContainer.firstChild) historyContainer.innerHTML = '<p style="color:var(--secondary);">No history yet.</p>';
         updateChatBadge(requests);
-        
-        // Join rooms for all active chats
+
         if (socket && socket.connected) {
             requests.forEach(req => {
-                if (req.student_id && req.helper_id && req.status !== 'cancelled') {
-                    socket.emit('join_room', { request_id: req.id });
-                }
+                if (req.helper_id && req.status !== 'cancelled') socket.emit('join_room', { request_id: req.id });
             });
         }
     }
 
-    async function fetchHelperHistory() {
-        const requests = await apiFetch('/requests/my');
-        if (!requests || !Array.isArray(requests)) return;
-
-        allRequests = requests;
-        const container = document.getElementById('helperHistory');
-        if (!container) return;
-        container.innerHTML = '';
-
-        requests.forEach(req => {
-            const card = document.createElement('div');
-            card.className = 'feature-card';
-            const helperContactBlock = req.contact_unlocked && req.peer_phone ? `
-                <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:0.5rem;padding:0.75rem;margin:0.5rem 0;font-size:0.88rem;">
-                    <p style="font-weight:700;color:#15803d;margin:0 0 0.4rem;"><i class="fas fa-address-card"></i> Student Contact</p>
-                    ${req.peer_phone ? `<p style="margin:0.2rem 0;"><i class="fas fa-phone" style="width:16px;"></i> <a href="tel:${req.peer_phone}">${req.peer_phone}</a></p>` : ''}
-                    ${req.peer_email ? `<p style="margin:0.2rem 0;"><i class="fas fa-envelope" style="width:16px;"></i> <a href="mailto:${req.peer_email}">${req.peer_email}</a></p>` : ''}
-                    ${req.peer_whatsapp ? `<p style="margin:0.2rem 0;"><i class="fab fa-whatsapp" style="width:16px;color:#25d366;"></i> ${req.peer_whatsapp}</p>` : ''}
-                    ${req.peer_telegram ? `<p style="margin:0.2rem 0;"><i class="fab fa-telegram" style="width:16px;color:#0088cc;"></i> ${req.peer_telegram}</p>` : ''}
-                </div>` : '';
-
-            card.innerHTML = `
-                <h3>${req.title}</h3>
-                <p><strong>Student:</strong> ${req.student_name}</p>
-                ${helperContactBlock}
-                <p><strong>Status:</strong> <span class="badge status-${req.status}">${req.status}</span></p>
-                <p>${req.description.substring(0, 100)}...</p>
-                ${renderAttachments(req.attachments)}
-                <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                    <button onclick="viewChat(${req.id}, '${req.title.replace(/'/g, "\\'")})" class="btn btn-outline" style="flex: 1;">Chat</button>
-                    ${req.status === 'in_progress' ? `<button onclick="cancelRequest(${req.id})" class="btn btn-outline" style="color: #ef4444; border-color: #ef4444; flex: 1;">Cancel</button>` : ''}
-                </div>
-            `;
-            container.appendChild(card);
-        });
-
-        if (container.innerHTML === '') container.innerHTML = '<p style="color: var(--secondary);">No accepted or completed bookings yet.</p>';
-        updateChatBadge(requests);
-        
-        // Join rooms for all active chats
-        if (socket && socket.connected) {
-            requests.forEach(req => {
-                if (req.student_id && req.helper_id && req.status !== 'cancelled') {
-                    socket.emit('join_room', { request_id: req.id });
-                }
-            });
-        }
-    }
-
+    // ── Helper: available requests ────────────────────────────────────────────
     async function fetchAvailableRequests() {
         const stats = await apiFetch('/users/me/stats');
         if (stats) {
             document.getElementById('helperStatTotal').textContent = stats.total_requests;
             document.getElementById('helperStatCompleted').textContent = stats.completed;
             document.getElementById('helperStatOngoing').textContent = stats.ongoing;
-            document.getElementById('helperStatEarned').textContent = `₹${stats.total_earned}`;
+            document.getElementById('helperStatEarned').textContent = '₹' + stats.total_earned;
         }
 
         const requests = await apiFetch('/requests/?status=open');
@@ -412,7 +400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const emptyState = document.getElementById('helperRequestsEmpty');
         if (!container) return;
         container.innerHTML = '';
-        
+
         if (requests.length === 0) {
             if (emptyState) emptyState.style.display = 'block';
             container.style.display = 'none';
@@ -425,92 +413,259 @@ document.addEventListener('DOMContentLoaded', async () => {
             const card = document.createElement('div');
             card.className = 'feature-card';
             card.id = `request-available-${req.id}`;
-            const urgentBadge = req.is_urgent_print ? `<span class="badge" style="background:#fef2f2; color:#ef4444; border:1px solid #fca5a5; margin-bottom: 0.5rem; display: inline-block;"><i class="fas fa-print"></i> URGENT PRINT</span>` : '';
+            const urgentBadge = req.is_urgent_print
+                ? `<span class="badge" style="background:#fef2f2;color:#ef4444;border:1px solid #fca5a5;margin-bottom:0.5rem;display:inline-block;"><i class="fas fa-print"></i> URGENT PRINT</span>`
+                : '';
+            const yourShare = req.budget ? (req.budget * 0.9).toFixed(0) : '—';
             card.innerHTML = `
                 ${urgentBadge}
                 <h3>${req.title}</h3>
                 <p><strong>Subject:</strong> ${req.subject}</p>
-                <p><strong>Budget:</strong> ₹${req.budget || 'N/A'}</p>
-                <p>${req.description.substring(0, 100)}...</p>
+                <p><strong>Budget:</strong> <span style="color:#10b981;font-weight:700;">&#8377;${req.budget || 'N/A'}</span>
+                   <span style="font-size:0.75rem;color:#94a3b8;">&nbsp;(you receive &#8377;${yourShare})</span></p>
+                <p style="font-size:0.88rem;color:var(--secondary);">${(req.description || '').substring(0, 120)}${(req.description || '').length > 120 ? '…' : ''}</p>
                 ${renderAttachments(req.attachments)}
-                <button onclick="acceptRequest(${req.id})" class="btn btn-primary" style="margin-top: 1rem; width: 100%;">Accept Request</button>
+                <button onclick="acceptRequest('${req.id}')" class="btn btn-primary" style="margin-top:1rem;width:100%;">Accept &amp; Work On This</button>
             `;
             container.appendChild(card);
         });
     }
 
-    function updateChatBadge(requests) {
-        const chats = requests.filter(r => r.student_id && r.helper_id && r.status !== 'cancelled');
-        const badge = document.getElementById('chatBadge');
-        if (!badge) return;
-        if (chats.length > 0) {
-            badge.textContent = chats.length;
-            badge.style.display = 'block';
-        } else {
-            badge.style.display = 'none';
+    // ── Helper: history ───────────────────────────────────────────────────────
+    async function fetchHelperHistory() {
+        const requests = await apiFetch('/requests/my');
+        if (!requests || !Array.isArray(requests)) return;
+        allRequests = requests;
+
+        const container = document.getElementById('helperHistory');
+        if (!container) return;
+        container.innerHTML = '';
+
+        requests.forEach(req => {
+            const card = document.createElement('div');
+            card.className = 'feature-card';
+            const yourShare = req.budget ? (req.budget * 0.9).toFixed(0) : '—';
+            card.innerHTML = `
+                <h3>${req.title}</h3>
+                <p><strong>Subject:</strong> ${req.subject}</p>
+                <p><strong>Budget:</strong> &#8377;${req.budget || '—'}
+                   <span style="font-size:0.75rem;color:#94a3b8;">&nbsp;(your share: &#8377;${yourShare})</span></p>
+                <p><strong>Status:</strong> <span class="badge status-${req.status}">${STATUS_LABEL[req.status] || req.status}</span></p>
+                <p style="font-size:0.88rem;color:var(--secondary);">${(req.description || '').substring(0, 100)}${(req.description || '').length > 100 ? '…' : ''}</p>
+                ${renderAttachments(req.attachments)}
+                ${helperActionBlock(req)}
+            `;
+            container.appendChild(card);
+        });
+
+        if (!container.firstChild) container.innerHTML = '<p style="color:var(--secondary);">No accepted or completed tasks yet.</p>';
+        updateChatBadge(requests);
+
+        if (socket && socket.connected) {
+            requests.forEach(req => {
+                if (req.helper_id && req.status !== 'cancelled') socket.emit('join_room', { request_id: req.id });
+            });
         }
     }
 
-    // ===== GLOBAL UI HANDLERS =====
-    window.unlockContact = (requestId) => {
-        // Set the request_id note on the hidden form input
-        const noteInput = document.getElementById('rzpRequestIdNote');
-        if (noteInput) noteInput.value = requestId;
+    function updateChatBadge(requests) {
+        const chats = requests.filter(r => r.helper_id && r.status !== 'cancelled');
+        const badge = document.getElementById('chatBadge');
+        if (!badge) return;
+        if (chats.length > 0) { badge.textContent = chats.length; badge.style.display = 'block'; }
+        else badge.style.display = 'none';
+    }
 
-        // Store requestId for the form submit handler
-        const form = document.getElementById('rzpPaymentButtonForm');
-        if (form) form.dataset.requestId = requestId;
-
-        // Show disclaimer + payment button modal
-        const disclaimerModal = document.getElementById('unlockDisclaimerModal');
-        if (disclaimerModal) disclaimerModal.style.display = 'flex';
-    };
-
-    // Intercept Razorpay Payment Button form submit (fires after successful payment)
-    document.addEventListener('DOMContentLoaded', () => {
-        const form = document.getElementById('rzpPaymentButtonForm');
-        if (!form) return;
-        form.addEventListener('submit', async (e) => {
+    // ── Request creation ──────────────────────────────────────────────────────
+    const requestForm = document.getElementById('requestForm');
+    if (requestForm) {
+        requestForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const data = new FormData(form);
-            const requestId = form.dataset.requestId;
-            const payload = {
-                razorpay_payment_link_id:              data.get('razorpay_payment_link_id')              || '',
-                razorpay_payment_link_reference_id:    data.get('razorpay_payment_link_reference_id')    || '',
-                razorpay_payment_id:                   data.get('razorpay_payment_id')                   || '',
-                razorpay_signature:                    data.get('razorpay_signature')                    || '',
-                request_id:                            requestId,
-            };
-            // Close disclaimer modal
-            const disclaimerModal = document.getElementById('unlockDisclaimerModal');
-            if (disclaimerModal) disclaimerModal.style.display = 'none';
 
-            const verifyRes = await apiFetch('/payments/verify-button', {
-                method: 'POST',
-                body: JSON.stringify(payload),
-            });
-            if (verifyRes && verifyRes.success) {
-                const modal = document.getElementById('paymentModal');
-                if (modal) modal.style.display = 'flex';
-                else location.reload();
-            } else {
-                alert('Payment verification failed. Please contact support.');
+            const budget = parseFloat(document.getElementById('reqBudget').value);
+            if (!budget || budget < 50) {
+                alert('Please enter a valid budget of at least ₹50.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('title', document.getElementById('reqTitle').value);
+            formData.append('subject', document.getElementById('reqSubject').value);
+            formData.append('description', document.getElementById('reqDesc').value);
+            formData.append('deadline', new Date(document.getElementById('reqDeadline').value).toISOString());
+            formData.append('budget', budget);
+            formData.append('is_urgent_print', document.getElementById('reqUrgentPrint').checked);
+
+            const fileInput = document.getElementById('reqFiles');
+            if (fileInput && fileInput.files.length > 0) {
+                for (let i = 0; i < fileInput.files.length; i++) formData.append('files', fileInput.files[i]);
+            }
+
+            const submitBtn = requestForm.querySelector('[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting…';
+
+            const res = await apiFetch('/requests/', { method: 'POST', body: formData });
+
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Continue to Payment (₹9)';
+
+            if (res) {
+                window.hideRequestModal();
+                requestForm.reset();
+                window.openPostingFeeModal(res.id);
             }
         });
+    }
+
+    // ── Posting Fee Flow (₹9 — Razorpay Payment Button) ─────────────────────
+    window.openPostingFeeModal = (requestId) => {
+        _activeRequestId = requestId;
+        const hiddenField = document.getElementById('postingFeeRequestId');
+        if (hiddenField) hiddenField.value = requestId;
+        document.getElementById('postingFeeModal').style.display = 'flex';
+    };
+
+    // Intercept Payment Button form submit — Razorpay populates the form with payment data
+    document.addEventListener('submit', async (e) => {
+        if (e.target.id !== 'postingFeePaymentForm') return;
+        e.preventDefault();
+
+        const data = new FormData(e.target);
+        const payload = {
+            razorpay_payment_id:                   data.get('razorpay_payment_id') || '',
+            razorpay_payment_link_id:              data.get('razorpay_payment_link_id') || '',
+            razorpay_payment_link_reference_id:    data.get('razorpay_payment_link_reference_id') || '',
+            razorpay_signature:                    data.get('razorpay_signature') || '',
+            request_id:                            _activeRequestId || '',
+        };
+
+        document.getElementById('postingFeeModal').style.display = 'none';
+
+        const verify = await apiFetch('/payments/verify-button-posting-fee', {
+            method: 'POST',
+            body: payload,
+        });
+
+        if (verify && verify.success) {
+            showSuccessModal('Assignment Published!', 'Your assignment is now live. Helpers can see and accept it.', '🚀');
+        } else {
+            alert('Payment verification failed. Please contact support.');
+        }
     });
 
+    // ── Submit Work Flow (helper) ─────────────────────────────────────────────
+    window.openSubmitWorkModal = (requestId) => {
+        _activeRequestId = requestId;
+        document.getElementById('submitWorkModal').style.display = 'flex';
+    };
+
+    const submitWorkForm = document.getElementById('submitWorkForm');
+    if (submitWorkForm) {
+        submitWorkForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('workFileInput');
+            if (!fileInput || !fileInput.files.length) { alert('Please select a file to upload.'); return; }
+            if (!_activeRequestId) return;
+
+            const submitBtn = submitWorkForm.querySelector('[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Uploading…';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            const res = await apiFetch(`/requests/${_activeRequestId}/submit-work`, { method: 'POST', body: formData });
+
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit for Verification';
+
+            if (res) {
+                document.getElementById('submitWorkModal').style.display = 'none';
+                submitWorkForm.reset();
+                showSuccessModal('Work Submitted!', "Your work is with admin for review. You'll be notified of the outcome.", '📤');
+            } else {
+                alert('Upload failed. Please try again.');
+            }
+        });
+    }
+
+    // ── Pay For Work Flow (student, full budget) ──────────────────────────────
+    window.openPayForWorkModal = (requestId, budget) => {
+        _activeRequestId = requestId;
+        document.getElementById('payForWorkAmount').textContent = '₹' + budget;
+        document.getElementById('payForWorkModal').style.display = 'flex';
+    };
+
+    window.payForWork = async () => {
+        if (!_activeRequestId) return;
+        const btn = document.getElementById('payForWorkBtn');
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+
+        const config = await apiFetch('/payments/config');
+        if (!config) { btn.disabled = false; btn.textContent = 'Pay & Download'; return; }
+
+        const order = await apiFetch('/payments/create-assignment-order', {
+            method: 'POST',
+            body: { request_id: _activeRequestId }
+        });
+        btn.disabled = false;
+        btn.textContent = 'Pay & Download';
+
+        if (!order) { alert('Could not create payment order. Please try again.'); return; }
+
+        document.getElementById('payForWorkModal').style.display = 'none';
+
+        const rzp = new Razorpay({
+            key: config.key_id,
+            amount: order.amount,
+            currency: order.currency,
+            name: 'AcadMate',
+            description: 'Assignment: ' + order.request_title,
+            order_id: order.razorpay_order_id,
+            handler: async (response) => {
+                const verify = await apiFetch('/payments/verify-assignment-payment', {
+                    method: 'POST',
+                    body: {
+                        razorpay_order_id: response.razorpay_order_id,
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_signature: response.razorpay_signature,
+                    }
+                });
+                if (verify && verify.success) {
+                    showSuccessModal(
+                        'Payment Confirmed!',
+                        'Payment of ₹' + verify.amount_paid + ' confirmed. Your assignment is ready to download!',
+                        '✅'
+                    );
+                } else {
+                    alert('Payment verification failed. Please contact support.');
+                }
+            },
+            modal: { ondismiss: () => {} },
+            theme: { color: '#10b981' }
+        });
+        rzp.open();
+    };
+
+    // ── Success modal ─────────────────────────────────────────────────────────
+    function showSuccessModal(title, message, icon) {
+        const modal = document.getElementById('paymentModal');
+        const titleEl = document.getElementById('paymentModalTitle');
+        const msgEl = document.getElementById('paymentModalMsg');
+        const iconEl = document.getElementById('paymentModalIcon');
+        if (titleEl) titleEl.textContent = title;
+        if (msgEl) msgEl.textContent = message;
+        if (iconEl) iconEl.textContent = icon || '✅';
+        if (modal) modal.style.display = 'flex';
+    }
+
+    // ── Accept Request (helper) ───────────────────────────────────────────────
     window.acceptRequest = async (id) => {
         const res = await apiFetch(`/requests/${id}/accept`, { method: 'PUT' });
         if (res) {
-            alert('Request accepted!');
-            location.reload();
-        }
-    };
-
-    window.markCompleted = async (id) => {
-        const res = await apiFetch(`/requests/${id}/complete`, { method: 'PUT' });
-        if (res) {
-            alert('Request marked as completed!');
+            alert('Request accepted! Work on it and submit the completed file when ready.');
             location.reload();
         }
     };
@@ -518,36 +673,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.cancelRequest = async (id) => {
         if (!confirm('Are you sure you want to cancel this request?')) return;
         const res = await apiFetch(`/requests/${id}/cancel`, { method: 'PUT' });
-        if (res) {
-            alert('Request cancelled!');
-            location.reload();
-        }
+        if (res) { alert('Request cancelled.'); location.reload(); }
     };
 
-    // ===== CHAT =====
+    // ── Modal toggles ─────────────────────────────────────────────────────────
+    window.showRequestModal = () => document.getElementById('requestModal').style.display = 'flex';
+    window.hideRequestModal = () => document.getElementById('requestModal').style.display = 'none';
+
+    // ── Marketplace ───────────────────────────────────────────────────────────
+    window.showMarketplaceModal = async () => {
+        document.getElementById('marketplaceModal').style.display = 'flex';
+        const list = document.getElementById('marketplaceList');
+        list.innerHTML = '<p style="color:var(--secondary);text-align:center;grid-column:1/-1;">Loading…</p>';
+        const items = await apiFetch('/requests/marketplace');
+        if (!items || items.length === 0) {
+            list.innerHTML = '<p style="color:var(--secondary);text-align:center;grid-column:1/-1;">No items yet.</p>';
+            return;
+        }
+        list.innerHTML = '';
+        items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'feature-card';
+            card.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem;">
+                    <span class="badge status-completed">${item.item_type.toUpperCase()}</span>
+                    <span style="font-weight:700;color:#059669;">₹${item.price}</span>
+                </div>
+                <h3>${item.title}</h3>
+                <p style="font-size:0.9rem;margin-bottom:1rem;">${item.description}</p>
+                <a href="${BASE_URL_ROOT}${item.file_path}" target="_blank" class="btn btn-primary" style="width:100%;text-align:center;text-decoration:none;">View &amp; Download <i class="fas fa-download"></i></a>
+            `;
+            list.appendChild(card);
+        });
+    };
+    window.hideMarketplaceModal = () => document.getElementById('marketplaceModal').style.display = 'none';
+
+    // ── Chat ──────────────────────────────────────────────────────────────────
     window.viewChat = async (id, title) => {
         currentChatId = id;
-        document.getElementById('chatTitle').textContent = `Chat: ${title}`;
+        document.getElementById('chatTitle').textContent = 'Chat: ' + title;
         document.getElementById('chatModal').style.display = 'flex';
-        document.getElementById('messageList').innerHTML = '<p style="text-align: center; color: var(--secondary);">Loading messages...</p>';
+        document.getElementById('messageList').innerHTML = '<p style="text-align:center;color:var(--secondary);">Loading…</p>';
 
-        // Always join the room when opening chat
-        if (socket && socket.connected) {
-            socket.emit('join_room', { request_id: id });
-        }
+        if (socket && socket.connected) socket.emit('join_room', { request_id: id });
 
-        // Fetch and display all messages from the database
         const messages = await apiFetch(`/requests/${id}/messages`);
         const list = document.getElementById('messageList');
         if (!list) return;
         list.innerHTML = '';
-        
+        const userStr = localStorage.getItem('user');
+        const currentUser = userStr ? JSON.parse(userStr) : null;
         if (messages && Array.isArray(messages) && messages.length > 0) {
-            const userStr = localStorage.getItem('user');
-            const currentUser = userStr ? JSON.parse(userStr) : null;
             messages.forEach(msg => appendMessage(msg, currentUser?.id));
         } else {
-            list.innerHTML = '<p style="text-align: center; color: var(--secondary); padding: 2rem;">No messages yet. Start the conversation!</p>';
+            list.innerHTML = '<p style="text-align:center;color:var(--secondary);padding:2rem;">No messages yet. Start the conversation!</p>';
         }
     };
 
@@ -556,77 +735,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentChatId = null;
     };
 
-    window.showRequestModal = () => document.getElementById('requestModal').style.display = 'flex';
-    window.hideRequestModal = () => document.getElementById('requestModal').style.display = 'none';
-
-    window.showMarketplaceModal = async () => {
-        document.getElementById('marketplaceModal').style.display = 'flex';
-        const list = document.getElementById('marketplaceList');
-        list.innerHTML = '<p style="color: var(--secondary); text-align: center; grid-column: 1/-1;">Loading marketplace items...</p>';
-        const items = await apiFetch('/requests/marketplace');
-        if (!items || items.length === 0) {
-            list.innerHTML = '<p style="color: var(--secondary); text-align: center; grid-column: 1/-1;">No study materials or notes available yet.</p>';
-            return;
-        }
-        list.innerHTML = '';
-        items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'feature-card';
-            card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
-                    <span class="badge status-completed">${item.item_type.toUpperCase()}</span>
-                    <span style="font-weight: 700; color: #059669;">₹${item.price}</span>
-                </div>
-                <h3>${item.title}</h3>
-                <p style="font-size: 0.9rem; margin-bottom: 1rem;">${item.description}</p>
-                <a href="${BASE_URL_ROOT}${item.file_path}" target="_blank" class="btn btn-primary" style="width: 100%; text-align: center;">View & Download <i class="fas fa-download"></i></a>
-            `;
-            list.appendChild(card);
-        });
-    };
-    window.hideMarketplaceModal = () => document.getElementById('marketplaceModal').style.display = 'none';
-
     window.showChatList = async () => {
         const listContent = document.getElementById('chatListContent');
         document.getElementById('chatListModal').style.display = 'flex';
-        listContent.innerHTML = '<p style="color: var(--secondary); text-align: center;">Loading chats...</p>';
+        listContent.innerHTML = '<p style="color:var(--secondary);text-align:center;">Loading…</p>';
 
         const requests = await apiFetch('/requests/my');
         if (!requests || !Array.isArray(requests)) return;
 
-        const chats = requests.filter(r => r.student_id && r.helper_id);
+        const chats = requests.filter(r => r.helper_id);
         if (chats.length === 0) {
-            listContent.innerHTML = '<p style="color: var(--secondary); text-align: center;">No active chats found.</p>';
+            listContent.innerHTML = '<p style="color:var(--secondary);text-align:center;">No active chats found.</p>';
             return;
         }
 
         const userStr = localStorage.getItem('user');
         const user = userStr ? JSON.parse(userStr) : null;
-
         listContent.innerHTML = '';
         chats.forEach(chat => {
             const item = document.createElement('div');
             item.className = 'chat-list-item';
             const peerName = user?.role === 'student' ? chat.helper_name : chat.student_name;
-            item.onclick = () => {
-                window.hideChatList();
-                window.viewChat(chat.id, chat.title);
-            };
+            item.onclick = () => { window.hideChatList(); window.viewChat(chat.id, chat.title); };
             item.innerHTML = `
                 <i class="fas fa-user-circle"></i>
                 <div class="chat-list-info">
                     <h4>${chat.title}</h4>
                     <p>${peerName || 'Peer'}</p>
                 </div>
-                <i class="fas fa-chevron-right" style="font-size: 0.8rem; color: var(--border);"></i>
+                <i class="fas fa-chevron-right" style="font-size:0.8rem;color:var(--border);"></i>
             `;
             listContent.appendChild(item);
         });
     };
-
     window.hideChatList = () => document.getElementById('chatListModal').style.display = 'none';
 
-    // ===== CHAT MESSAGE RENDERING =====
+    // ── Chat message rendering ────────────────────────────────────────────────
     const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 
     function renderAttachmentInChat(attachmentPath, isMe) {
@@ -637,70 +781,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (IMAGE_EXTS.includes(ext)) {
             return `<div class="chat-msg-attachment"><img src="${fullUrl}" alt="image" onclick="window.open('${fullUrl}','_blank')"></div>`;
         }
-        const linkClass = isMe ? 'sent' : 'received';
-        return `<div class="chat-msg-attachment"><a href="${fullUrl}" target="_blank" class="chat-file-link ${linkClass}"><i class="fas fa-file-alt"></i> ${fileName}</a></div>`;
+        return `<div class="chat-msg-attachment"><a href="${fullUrl}" target="_blank" class="chat-file-link ${isMe ? 'sent' : 'received'}"><i class="fas fa-file-alt"></i> ${fileName}</a></div>`;
     }
 
     function appendMessage(msg, currentUserId) {
         const list = document.getElementById('messageList');
         if (!list) return;
-        
-        // Remove the "no messages" placeholder if present
         const placeholder = list.querySelector('p');
-        if (placeholder && placeholder.textContent.includes('No messages')) {
-            list.innerHTML = '';
-        }
-        
+        if (placeholder && placeholder.textContent.includes('No messages')) list.innerHTML = '';
+
         const div = document.createElement('div');
         const isMe = msg.sender_id === currentUserId;
         div.style.textAlign = isMe ? 'right' : 'left';
         div.style.margin = '0.5rem 0';
-        const contentHtml = msg.content ? msg.content : '';
-        const attachHtml = renderAttachmentInChat(msg.attachment, isMe);
         div.innerHTML = `
-            <div style="display: inline-block; padding: 0.5rem 1rem; border-radius: 12px; background: ${isMe ? 'var(--primary)' : '#f1f5f9'}; color: ${isMe ? '#fff' : 'var(--text-dark)'}; max-width: 80%; text-align: left;">
-                <div style="font-size: 0.7rem; opacity: 0.8; margin-bottom: 0.2rem;">${isMe ? 'Me' : 'Peer'}</div>
-                ${contentHtml}
-                ${attachHtml}
+            <div style="display:inline-block;padding:0.5rem 1rem;border-radius:12px;background:${isMe ? 'var(--primary)' : '#f1f5f9'};color:${isMe ? '#fff' : 'var(--text-dark)'};max-width:80%;text-align:left;">
+                <div style="font-size:0.7rem;opacity:0.8;margin-bottom:0.2rem;">${isMe ? 'Me' : 'Peer'}</div>
+                ${msg.content || ''}
+                ${renderAttachmentInChat(msg.attachment, isMe)}
             </div>
         `;
         list.appendChild(div);
         list.scrollTop = list.scrollHeight;
     }
 
-    // ===== REQUEST FORM =====
-    const requestForm = document.getElementById('requestForm');
-    if (requestForm) {
-        requestForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const formData = new FormData();
-            formData.append('title', document.getElementById('reqTitle').value);
-            formData.append('subject', document.getElementById('reqSubject').value);
-            formData.append('description', document.getElementById('reqDesc').value);
-            formData.append('deadline', new Date(document.getElementById('reqDeadline').value).toISOString());
-            formData.append('is_urgent_print', document.getElementById('reqUrgentPrint').checked);
-
-            const fileInput = document.getElementById('reqFiles');
-            if (fileInput.files.length > 0) {
-                for (let i = 0; i < fileInput.files.length; i++) {
-                    formData.append('files', fileInput.files[i]);
-                }
-            }
-
-            const res = await apiFetch('/requests/', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (res) {
-                window.hideRequestModal();
-                fetchStudentData();
-            }
-        });
-    }
-
-    // ===== CHAT FILE ATTACHMENT =====
+    // ── Chat file attachment ──────────────────────────────────────────────────
     const chatAttachBtn = document.getElementById('chatAttachBtn');
     const chatFileInput = document.getElementById('chatFileInput');
     const chatFilePreview = document.getElementById('chatFilePreview');
@@ -715,7 +820,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 chatFilePreview.style.display = 'block';
             }
         });
-        chatFileRemove.addEventListener('click', () => {
+        chatFileRemove?.addEventListener('click', () => {
             chatFileInput.value = '';
             chatFilePreview.style.display = 'none';
         });
@@ -732,7 +837,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const userStr = localStorage.getItem('user');
             const user = userStr ? JSON.parse(userStr) : null;
 
-            // Clear inputs immediately
             document.getElementById('chatInput').value = '';
             if (chatFileInput) chatFileInput.value = '';
             if (chatFilePreview) chatFilePreview.style.display = 'none';
@@ -741,61 +845,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const formData = new FormData();
                 formData.append('file', file);
                 if (content) formData.append('content', content);
-
-                const saved = await apiFetch(`/requests/${currentChatId}/messages/upload`, {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const saved = await apiFetch(`/requests/${currentChatId}/messages/upload`, { method: 'POST', body: formData });
                 if (saved) {
                     appendMessage(saved, user?.id);
-                    try {
-                        if (socket && socket.connected) {
-                            socket.emit('send_message', {
-                                request_id: currentChatId,
-                                sender_id: user?.id,
-                                content: saved.content,
-                                attachment: saved.attachment
-                            });
-                        }
-                    } catch (err) {
-                        console.log('Socket.IO emit failed (non-critical):', err);
+                    if (socket && socket.connected) {
+                        socket.emit('send_message', { request_id: currentChatId, sender_id: user?.id, content: saved.content, attachment: saved.attachment });
                     }
                 }
             } else {
-                // Show message immediately (optimistic)
-                appendMessage({ sender_id: user?.id, content: content }, user?.id);
-
-                const saved = await apiFetch(`/requests/${currentChatId}/messages`, {
-                    method: 'POST',
-                    body: { content: content }
-                });
-
-                try {
-                    if (socket && socket.connected) {
-                        socket.emit('send_message', {
-                            request_id: currentChatId,
-                            sender_id: user?.id,
-                            content: content
-                        });
-                    }
-                } catch (err) {
-                    console.log('Socket.IO emit failed (non-critical):', err);
+                appendMessage({ sender_id: user?.id, content }, user?.id);
+                await apiFetch(`/requests/${currentChatId}/messages`, { method: 'POST', body: { content } });
+                if (socket && socket.connected) {
+                    socket.emit('send_message', { request_id: currentChatId, sender_id: user?.id, content });
                 }
             }
+        });
+    }
+
+    // ── Subject filter ────────────────────────────────────────────────────────
+    const subjectFilter = document.getElementById('subjectFilter');
+    if (subjectFilter) {
+        subjectFilter.addEventListener('input', () => {
+            const term = subjectFilter.value.toLowerCase();
+            document.querySelectorAll('#availableRequests .feature-card').forEach(card => {
+                card.style.display = card.textContent.toLowerCase().includes(term) ? '' : 'none';
+            });
         });
     }
 
     await validateSession();
 });
 
-// Logout
+// ── Logout ────────────────────────────────────────────────────────────────────
 async function logout() {
     const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const BASE = IS_LOCAL ? 'http://localhost:8000' : 'https://assignment-app1-gdya.onrender.com';
-    try {
-        await fetch(`${BASE}/api/v1/auth/logout`, { method: 'POST' });
-    } catch (e) { }
+    try { await fetch(`${BASE}/api/v1/auth/logout`, { method: 'POST' }); } catch (e) {}
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
     window.location.href = 'index.html';

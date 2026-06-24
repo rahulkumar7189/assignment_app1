@@ -21,15 +21,18 @@
                     <i class="fas fa-graduation-cap"></i>
                     AcadMate
                 </a>
-                <div class="nav-links">
+                <div class="nav-links" id="mainNavLinks">
                     <a href="index.html">Home</a>
                     <a href="login.html" class="btn btn-outline">Login</a>
                 </div>
+                <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu" onclick="toggleMobileNav()">
+                    <i class="fas fa-bars"></i>
+                </button>
             </nav>
         </div>
     </header>
 
-    <main class="container" style="padding-top: 120px; padding-bottom: 80px; max-width: 800px;">
+    <main class="container" style="padding-top: 120px; padding-bottom: 80px; max-width: 800px; width: 100%;">
         <h1 style="font-size: 2.5rem; margin-bottom: 2rem;">Terms & Conditions</h1>
 
         <div class="policy-section"
@@ -41,33 +44,31 @@
                     assignment completion, exam cheating, or any form of academic misconduct.</p>
             </section>
 
-            <section
-                style="margin-bottom: 2rem; border-left: 4px solid var(--primary); padding-left: 1.5rem; background: #f8fafc; padding: 1.5rem; border-radius: 0 8px 8px 0;">
-                <h2 style="color: var(--primary); margin-bottom: 1rem;">2. Platform Fee &amp; Contact Unlock</h2>
-                <p style="font-weight: 600;">To facilitate introductions between students and helpers, AcadMate
-                    charges a flat &#8377;20 platform fee:</p>
-                <ul style="margin-top: 1rem; list-style-position: inside;">
-                    <li><strong>Amount:</strong> A one-time &#8377;20 contact-unlock fee is charged per request.</li>
-                    <li><strong>Activation:</strong> Helper contact details (phone, email, WhatsApp, Telegram) are only
-                        revealed to the student once the &#8377;20 platform fee is confirmed.</li>
-                    <li><strong>Scope:</strong> This fee covers the platform's matchmaking service only. All work agreements, payments for assignments, and deliverables are arranged directly between the student and helper.</li>
+            <section style="margin-bottom: 2rem; border-left: 4px solid var(--primary); padding-left: 1.5rem; background: #f8fafc; padding: 1.5rem; border-radius: 0 8px 8px 0;">
+                <h2 style="color: var(--primary); margin-bottom: 1rem;">2. How Payments Work</h2>
+                <p style="font-weight: 600;">AcadMate uses a transparent anonymous escrow model:</p>
+                <ul style="margin-top: 1rem; list-style-position: inside; line-height: 2;">
+                    <li><strong>Listing Fee (&#8377;9):</strong> A non-refundable &#8377;9 fee is required to publish an assignment so helpers can find it.</li>
+                    <li><strong>Assignment Budget:</strong> The student sets a budget when posting. This amount is paid only after admin verifies the completed work.</li>
+                    <li><strong>Platform Commission:</strong> 10% of the assignment budget is retained by the platform.</li>
+                    <li><strong>Helper Payout:</strong> 90% of the budget is automatically transferred to the helper's registered UPI ID upon student payment.</li>
+                    <li><strong>Anonymity:</strong> Contact details of students and helpers are never revealed. All work is submitted and delivered through the platform only.</li>
                 </ul>
             </section>
 
             <section style="margin-bottom: 2rem;">
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">3. Limitation of Liability</h2>
-                <p>Assignment Helper acts only as a connection platform. Any agreement, payment, communication, service, deliverable, dispute, fraud, misconduct, plagiarism, or any other issue arising between Students and Helpers is solely their responsibility. AcadMate shall not be liable for any direct, indirect, incidental, or consequential damages resulting from interactions between users.</p>
+                <p>Assignment Helper acts only as an anonymous assignment delivery platform. All work is submitted through the platform and verified by admin before payment. Any dispute, fraud, misconduct, plagiarism, or academic integrity violation arising from assignments is solely the responsibility of the parties involved. Assignment Helper shall not be liable for any damages.</p>
             </section>
 
             <section style="margin-bottom: 2rem;">
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">4. User Conduct</h2>
-                <p>Professional behavior is expected at all times. Harassment, spam, or sharing of inappropriate content
-                    will lead to immediate account suspension and a permanent ban from the platform.</p>
+                <p>Professional behavior is expected at all times. Helpers must not include personal contact information (phone, email, WhatsApp, social media) anywhere in submitted work files or chat messages. Doing so will result in immediate account suspension. Harassment, spam, or sharing of inappropriate content will lead to a permanent ban.</p>
             </section>
 
             <section style="margin-bottom: 2rem;">
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">5. Refund Policy</h2>
-                <p>The &#8377;20 contact-unlock fee is non-refundable once a helper's contact details have been revealed. If a technical error occurs and contact details were not unlocked despite payment, please contact the admin for manual review.</p>
+                <p>The &#8377;9 listing fee is non-refundable in all cases. The assignment budget payment is non-refundable once the work file has been delivered to the student. If a verified technical error on our platform prevented delivery despite confirmed payment, please contact admin for review within 48 hours.</p>
             </section>
         </div>
     </main>
@@ -77,6 +78,22 @@
             <p style="color: #64748b; font-size: 0.875rem;">&copy; 2026 AcadMate. All rights reserved.</p>
         </div>
     </footer>
+    <script>
+        function toggleMobileNav() {
+            const nav = document.getElementById('mainNavLinks');
+            const btn = document.getElementById('mobileMenuBtn');
+            const isOpen = nav.classList.toggle('open');
+            btn.innerHTML = isOpen ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+        }
+        document.addEventListener('click', function (e) {
+            const nav = document.getElementById('mainNavLinks');
+            const btn = document.getElementById('mobileMenuBtn');
+            if (nav && btn && !nav.contains(e.target) && !btn.contains(e.target)) {
+                nav.classList.remove('open');
+                btn.innerHTML = '<i class="fas fa-bars"></i>';
+            }
+        });
+    </script>
 </body>
 
 </html>

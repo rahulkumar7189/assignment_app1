@@ -146,6 +146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'overview':   await loadOverview(); break;
             case 'users':      await loadUsers(); break;
             case 'requests':   await loadRequests(); break;
+            case 'workqueue':  await loadWorkQueue(); break;
             case 'chats':      await loadChats(); break;
             case 'payments':   await loadPayments(); break;
             case 'disputes':   await loadDisputes(); break;
@@ -154,6 +155,100 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'settings':   await loadSettings(); break;
         }
     }
+
+    // ── WORK QUEUE ───────────────────────────────────────────────────────────────
+    let _pendingRejectId = null;
+
+    async function loadWorkQueue() {
+        const items = await apiFetch('/admin/work-queue');
+        const container = document.getElementById('workQueueCards');
+        const emptyEl = document.getElementById('workQueueEmpty');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        if (!items || items.length === 0) {
+            if (emptyEl) emptyEl.style.display = 'block';
+            container.style.display = 'none';
+            updateWorkQueueBadge(0);
+            return;
+        }
+
+        if (emptyEl) emptyEl.style.display = 'none';
+        container.style.display = 'grid';
+        updateWorkQueueBadge(items.length);
+
+        items.forEach(req => {
+            const card = document.createElement('div');
+            card.className = 'grid-card';
+            card.style.cssText = 'padding:1.5rem;border:1px solid #e2e8f0;border-radius:1rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);';
+            const submitted = req.work_submitted_at ? new Date(req.work_submitted_at).toLocaleString('en-IN') : 'Unknown';
+            card.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.75rem;">
+                    <h3 style="margin:0;font-size:1rem;color:#1e293b;">${req.title}</h3>
+                    <span style="background:#fefce8;color:#713f12;border:1px solid #fde047;border-radius:0.4rem;padding:0.2rem 0.6rem;font-size:0.72rem;font-weight:600;white-space:nowrap;">Work Submitted</span>
+                </div>
+                <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Subject:</strong> ${req.subject}</p>
+                <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Budget:</strong> &#8377;${req.budget || '—'}</p>
+                <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Submitted:</strong> ${submitted}</p>
+                ${req.work_rejected_reason ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:0.4rem;padding:0.5rem 0.75rem;margin:0.5rem 0;font-size:0.78rem;color:#991b1b;">Previous rejection: ${req.work_rejected_reason}</div>` : ''}
+                <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem;">
+                    <a href="${API_BASE}/api/v1/admin/work/${req.id}/preview"
+                       target="_blank"
+                       style="display:block;text-align:center;padding:0.6rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.5rem;font-size:0.85rem;font-weight:600;text-decoration:none;">
+                        <i class="fas fa-file-alt"></i> View Submitted File
+                    </a>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button onclick="verifyWork('${req.id}', 'approve')"
+                                style="flex:1;padding:0.6rem;background:#10b981;color:#fff;border:none;border-radius:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                            <i class="fas fa-check"></i> Approve
+                        </button>
+                        <button onclick="openRejectModal('${req.id}')"
+                                style="flex:1;padding:0.6rem;background:#ef4444;color:#fff;border:none;border-radius:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                            <i class="fas fa-times"></i> Reject
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    function updateWorkQueueBadge(count) {
+        const badge = document.getElementById('workQueueBadge');
+        if (!badge) return;
+        if (count > 0) { badge.textContent = count; badge.style.display = 'inline'; }
+        else badge.style.display = 'none';
+    }
+
+    window.verifyWork = async (requestId, action, reason) => {
+        const body = { action };
+        if (reason) body.reason = reason;
+        const res = await apiFetch(`/admin/requests/${requestId}/verify-work`, {
+            method: 'PUT',
+            body: JSON.stringify(body)
+        });
+        if (res) {
+            alert(action === 'approve' ? 'Work approved! Student notified to pay.' : 'Work rejected. Helper notified to revise.');
+            await loadWorkQueue();
+        } else {
+            alert('Action failed. Please try again.');
+        }
+    };
+
+    window.openRejectModal = (requestId) => {
+        _pendingRejectId = requestId;
+        document.getElementById('rejectReasonText').value = '';
+        document.getElementById('rejectReasonModal').style.display = 'flex';
+    };
+
+    document.getElementById('confirmRejectBtn')?.addEventListener('click', async () => {
+        const reason = document.getElementById('rejectReasonText').value.trim();
+        if (!reason) { alert('Please enter a reason for rejection.'); return; }
+        document.getElementById('rejectReasonModal').style.display = 'none';
+        await verifyWork(_pendingRejectId, 'reject', reason);
+        _pendingRejectId = null;
+    });
 
     // ── OVERVIEW ─────────────────────────────────────────────────────────────────
     async function loadOverview() {
@@ -166,6 +261,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('statPending').textContent = res.pending_verifications;
         document.getElementById('statRevenue').textContent = `₹${(res.revenue_summary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
         loadRecentLogs();
+        // Update work queue badge
+        const wq = await apiFetch('/admin/work-queue');
+        updateWorkQueueBadge(wq ? wq.length : 0);
     }
 
     async function loadRecentLogs() {

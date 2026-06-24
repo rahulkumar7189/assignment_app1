@@ -90,20 +90,16 @@
             <div id="helperNote" style="display:none;">
                 <div class="helper-note">
                     <i class="fas fa-info-circle"></i>
-                    As a helper, students pay <strong>&#8377;20</strong> to unlock your contact details.
-                    You then arrange all work and payment directly with the student — the platform does not handle assignment payments.
+                    As a helper, you upload completed assignments through the platform. After admin verification and student payment, <strong>90% of the agreed amount is automatically transferred to your UPI ID.</strong> Your identity and contact details are never shared with students.
                 </div>
             </div>
 
-            <!-- Contact fields shown for helpers (all users can fill them) -->
-            <div id="contactFields" style="display:none;">
+            <!-- UPI ID — required for helpers only -->
+            <div id="upiField" style="display:none;">
                 <div class="form-group">
-                    <label for="whatsapp">WhatsApp Number <span class="optional-tag">(optional)</span></label>
-                    <input type="tel" id="whatsapp" class="form-input" placeholder="+91 9876543210">
-                </div>
-                <div class="form-group">
-                    <label for="telegram">Telegram ID <span class="optional-tag">(optional)</span></label>
-                    <input type="text" id="telegram" class="form-input" placeholder="@username">
+                    <label for="upi_id">UPI ID <span style="color:#dc2626;font-size:0.75rem;">Required for helpers</span></label>
+                    <input type="text" id="upi_id" class="form-input" placeholder="yourname@upi  (e.g. rahul@okicici)">
+                    <small style="color:#64748b;font-size:0.74rem;">Payouts for completed assignments will be sent here automatically.</small>
                 </div>
             </div>
 
@@ -120,12 +116,7 @@
                 <label>
                     <input type="checkbox" id="disclaimerCheck" required>
                     <span>
-                        I have read and agree: <strong>Assignment Helper acts only as a connection platform between Students and Helpers.</strong>
-                        The platform's sole service is facilitating introductions and unlocking contact details after payment of the platform fee.
-                        Any agreement, payment, communication, service, deliverable, dispute, fraud, misconduct, plagiarism, academic integrity violation,
-                        copyright infringement, non-payment, poor-quality work, harassment, or any other issue arising between Students and Helpers is
-                        solely their responsibility. Assignment Helper shall not be liable for any direct, indirect, incidental, consequential, legal,
-                        academic, financial, or reputational damages resulting from interactions between users.
+                        I have read and agree: Assignment Helper acts only as an anonymous assignment delivery platform. All work is submitted through the platform and verified by admin before payment. Any dispute, fraud, misconduct, plagiarism, or academic integrity violation arising from assignments is solely the responsibility of the parties involved. Assignment Helper shall not be liable for any damages.
                     </span>
                 </label>
             </div>
@@ -147,7 +138,8 @@
         document.getElementById('role').addEventListener('change', function () {
             const isHelper = this.value === 'helper';
             document.getElementById('helperNote').style.display = isHelper ? 'block' : 'none';
-            document.getElementById('contactFields').style.display = isHelper ? 'block' : 'none';
+            document.getElementById('upiField').style.display = isHelper ? 'block' : 'none';
+            document.getElementById('upi_id').required = isHelper;
         });
 
         document.getElementById('registerForm').addEventListener('submit', async function (e) {
@@ -162,17 +154,27 @@
             btn.disabled = true;
             btn.textContent = 'Creating account...';
 
-            const whatsapp = document.getElementById('whatsapp').value.trim();
-            const telegram = document.getElementById('telegram').value.trim();
+            const role = document.getElementById('role').value;
+            const upiId = document.getElementById('upi_id').value.trim();
+
+            if (role === 'helper' && !upiId) {
+                alert('UPI ID is required for helpers.');
+                btn.disabled = false; btn.textContent = 'Create Account';
+                return;
+            }
+            if (upiId && !upiId.includes('@')) {
+                alert('UPI ID must be in format name@upi (e.g. rahul@okicici)');
+                btn.disabled = false; btn.textContent = 'Create Account';
+                return;
+            }
 
             const payload = {
-                name:             document.getElementById('name').value,
-                email:            document.getElementById('email').value,
-                phone_number:     document.getElementById('phone').value,
-                role:             document.getElementById('role').value,
-                password:         document.getElementById('password').value,
-                whatsapp_number:  whatsapp || null,
-                telegram_id:      telegram || null,
+                name:         document.getElementById('name').value,
+                email:        document.getElementById('email').value,
+                phone_number: document.getElementById('phone').value,
+                role:         role,
+                password:     document.getElementById('password').value,
+                upi_id:       (role === 'helper' && upiId) ? upiId : null,
             };
 
             try {

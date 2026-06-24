@@ -21,13 +21,16 @@
                     <i class="fas fa-graduation-cap"></i>
                     AcadMate
                 </a>
-                <div class="nav-links">
+                <div class="nav-links" id="mainNavLinks">
                     <a href="#how-it-works">How it Works</a>
                     <a href="#features">Features</a>
                     <a href="#policy">Ethical Policy</a>
                     <a href="login.html" class="btn btn-outline">Login</a>
                     <a href="register.html" class="btn btn-primary">Get Started</a>
                 </div>
+                <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu" onclick="toggleMobileNav()">
+                    <i class="fas fa-bars"></i>
+                </button>
             </nav>
         </div>
     </header>
@@ -112,12 +115,38 @@
             <div style="max-width:700px;margin:1.5rem auto 1rem;padding:1rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:0.5rem;">
                 <p style="color:#94a3b8;font-size:0.72rem;line-height:1.6;text-align:center;">
                     <strong style="color:#cbd5e1;">Disclaimer:</strong>
-                    Assignment Helper acts only as a connection platform between Students and Helpers. The platform's sole service is facilitating introductions and unlocking contact details after payment of the platform fee. Any agreement, payment, communication, service, deliverable, dispute, fraud, misconduct, plagiarism, academic integrity violation, copyright infringement, non-payment, poor-quality work, harassment, or any other issue arising between Students and Helpers is solely their responsibility. Assignment Helper shall not be liable for any direct, indirect, incidental, consequential, legal, academic, financial, or reputational damages resulting from interactions between users.
+                    Assignment Helper acts only as an anonymous assignment delivery platform. All work is submitted through the platform and verified by admin before payment. Any dispute, fraud, misconduct, plagiarism, or academic integrity violation arising from assignments is solely the responsibility of the parties involved. Assignment Helper shall not be liable for any damages.
                 </p>
             </div>
             <p style="color: #64748b; font-size: 0.875rem;">&copy; 2026 AcadMate. All rights reserved.</p>
         </div>
     </footer>
+    <script>
+        function toggleMobileNav() {
+            const nav = document.getElementById('mainNavLinks');
+            const btn = document.getElementById('mobileMenuBtn');
+            const isOpen = nav.classList.toggle('open');
+            btn.innerHTML = isOpen ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+        }
+
+        // Close nav when a link is clicked
+        document.getElementById('mainNavLinks').addEventListener('click', function (e) {
+            if (e.target.tagName === 'A') {
+                this.classList.remove('open');
+                document.getElementById('mobileMenuBtn').innerHTML = '<i class="fas fa-bars"></i>';
+            }
+        });
+
+        // Close nav when clicking outside
+        document.addEventListener('click', function (e) {
+            const nav = document.getElementById('mainNavLinks');
+            const btn = document.getElementById('mobileMenuBtn');
+            if (!nav.contains(e.target) && !btn.contains(e.target)) {
+                nav.classList.remove('open');
+                btn.innerHTML = '<i class="fas fa-bars"></i>';
+            }
+        });
+    </script>
 </body>
 
 </html>

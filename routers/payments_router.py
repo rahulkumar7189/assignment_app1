@@ -1,11 +1,12 @@
 """
-Razorpay payment integration — ₹20 contact-unlock fee model.
-  - /payments/config          — public: return key_id for checkout
-  - /payments/create-order    — student creates ₹20 Razorpay order (Checkout.js)
-  - /payments/verify          — verify Checkout.js signature, unlock contact
-  - /payments/verify-button   — verify Payment Button signature, unlock contact
-  - /payments/history         — student sees their payment history
-  - /payments/admin/orders    — admin sees all contact-unlock transactions
+Razorpay payment integration — anonymous escrow model.
+  - /payments/config                  — public: return key_id for checkout
+  - /payments/create-posting-fee-order — student creates ₹9 order to publish assignment
+  - /payments/verify-posting-fee       — verify ₹9 payment, set request open
+  - /payments/create-assignment-order  — student creates order for full budget (after admin verifies work)
+  - /payments/verify-assignment-payment — verify full payment, auto-payout 90% to helper UPI
+  - /payments/history                  — student payment history
+  - /payments/admin/orders             — admin sees all transactions
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,15 +19,24 @@ from beanie.odm.fields import PydanticObjectId
 
 payments_router = APIRouter(prefix="/payments", tags=["payments"])
 
-RAZORPAY_KEY_ID     = os.getenv("RAZORPAY_KEY_ID", "")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
-CONTACT_UNLOCK_FEE  = 20.0   # ₹20 flat fee
+RAZORPAY_KEY_ID      = os.getenv("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET  = os.getenv("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_ACCOUNT_NUM = os.getenv("RAZORPAY_ACCOUNT_NUMBER", "")
+POSTING_FEE          = float(os.getenv("POSTING_FEE", "9"))
+COMMISSION_PERCENT   = float(os.getenv("PLATFORM_COMMISSION_PERCENT", "10"))
 
 
 def _rzp():
     if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
-        raise HTTPException(status_code=503, detail="Payment gateway not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env")
+        raise HTTPException(status_code=503, detail="Payment gateway not configured")
     return razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+
+
+async def _notify(user_id, notif_type, title, message, request_id=None):
+    await models.Notification(
+        user_id=user_id, type=notif_type, title=title,
+        message=message, related_request_id=request_id,
+    ).insert()
 
 
 # ── Config (public) ──────────────────────────────────────────────────────────
@@ -36,10 +46,72 @@ def get_config():
     return {"key_id": RAZORPAY_KEY_ID}
 
 
-# ── Create Order ─────────────────────────────────────────────────────────────
+# ── Posting Fee (₹9) — Payment Button verify ────────────────────────────────
 
-@payments_router.post("/create-order", response_model=schemas.PaymentOrderOut)
-async def create_order(
+@payments_router.post("/verify-button-posting-fee", response_model=schemas.PaymentVerifyResponse)
+async def verify_button_posting_fee(
+    payload: schemas.ButtonPaymentVerifyRequest,
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Verify the ₹9 Razorpay Payment Button payment and publish the assignment."""
+    auth.check_role(current_user, ["student"])
+
+    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(payload.request_id))
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.student_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your request")
+    if req.posting_fee_paid:
+        raise HTTPException(status_code=400, detail="Posting fee already paid for this request")
+
+    # Verify Razorpay Payment Button signature
+    client = _rzp()
+    try:
+        client.utility.verify_payment_link_signature({
+            "payment_link_id":               payload.razorpay_payment_link_id,
+            "payment_link_reference_id":     payload.razorpay_payment_link_reference_id,
+            "payment_id":                    payload.razorpay_payment_id,
+            "signature":                     payload.razorpay_signature,
+        })
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payment signature verification failed")
+
+    # Record payment
+    db_order = models.RazorpayOrder(
+        request_id=req.id,
+        student_id=current_user.id,
+        razorpay_order_id=payload.razorpay_payment_link_id,
+        order_type="posting_fee",
+        amount=POSTING_FEE,
+        status="paid",
+        razorpay_payment_id=payload.razorpay_payment_id,
+        paid_at=datetime.utcnow(),
+    )
+    await db_order.insert()
+
+    # Publish the request
+    req.posting_fee_paid = True
+    req.status = "open"
+    await req.save()
+
+    await _notify(
+        current_user.id, "posting_fee_paid",
+        "Assignment Published!",
+        f"Your assignment '{req.title}' is now live. Helpers can see and accept it.",
+        req.id,
+    )
+
+    return schemas.PaymentVerifyResponse(
+        success=True,
+        message="Posting fee paid. Your assignment is now live!",
+        amount_paid=POSTING_FEE,
+    )
+
+
+# ── Posting Fee (₹9) — create order (custom checkout fallback) ──────────────
+
+@payments_router.post("/create-posting-fee-order", response_model=schemas.PaymentOrderOut)
+async def create_posting_fee_order(
     payload: schemas.PaymentOrderCreate,
     current_user: models.User = Depends(auth.get_current_user),
 ):
@@ -50,24 +122,18 @@ async def create_order(
         raise HTTPException(status_code=404, detail="Request not found")
     if req.student_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your request")
-    if req.status != "in_progress":
-        raise HTTPException(status_code=400, detail="Contact can only be unlocked after a helper accepts the request")
-    if req.contact_unlocked:
-        raise HTTPException(status_code=400, detail="Contact details already unlocked for this request")
+    if req.posting_fee_paid:
+        raise HTTPException(status_code=400, detail="Posting fee already paid for this request")
 
     client = _rzp()
-    amount_paise = int(CONTACT_UNLOCK_FEE * 100)  # 2000 paise = ₹20
+    amount_paise = int(POSTING_FEE * 100)
 
     try:
         order = client.order.create({
             "amount": amount_paise,
             "currency": "INR",
-            "receipt": f"unlock_{str(req.id)}_{str(current_user.id)}",
-            "notes": {
-                "request_id": str(req.id),
-                "student_id": str(current_user.id),
-                "type": "contact_unlock",
-            }
+            "receipt": f"post_{str(req.id)}",
+            "notes": {"request_id": str(req.id), "type": "posting_fee"},
         })
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Razorpay order creation failed: {e}")
@@ -76,7 +142,8 @@ async def create_order(
         request_id=req.id,
         student_id=current_user.id,
         razorpay_order_id=order["id"],
-        amount=CONTACT_UNLOCK_FEE,
+        order_type="posting_fee",
+        amount=POSTING_FEE,
         status="created",
     )
     await db_order.insert()
@@ -90,16 +157,15 @@ async def create_order(
     )
 
 
-# ── Verify Payment ────────────────────────────────────────────────────────────
+# ── Posting Fee — verify ─────────────────────────────────────────────────────
 
-@payments_router.post("/verify", response_model=schemas.PaymentVerifyResponse)
-async def verify_payment(
+@payments_router.post("/verify-posting-fee", response_model=schemas.PaymentVerifyResponse)
+async def verify_posting_fee(
     payload: schemas.PaymentVerifyRequest,
     current_user: models.User = Depends(auth.get_current_user),
 ):
     client = _rzp()
 
-    # 1. Verify Razorpay signature
     try:
         client.utility.verify_payment_signature({
             "razorpay_order_id":   payload.razorpay_order_id,
@@ -107,141 +173,214 @@ async def verify_payment(
             "razorpay_signature":  payload.razorpay_signature,
         })
     except Exception:
-        raise HTTPException(status_code=400, detail="Payment signature verification failed — possible tampering")
+        raise HTTPException(status_code=400, detail="Payment signature verification failed")
 
-    # 2. Find the order record
     db_order = await models.RazorpayOrder.find_one(
         models.RazorpayOrder.razorpay_order_id == payload.razorpay_order_id
     )
     if not db_order:
-        raise HTTPException(status_code=404, detail="Order record not found")
+        raise HTTPException(status_code=404, detail="Order not found")
     if db_order.student_id != current_user.id:
         raise HTTPException(status_code=403, detail="Order does not belong to you")
     if db_order.status == "paid":
         raise HTTPException(status_code=400, detail="Payment already verified")
 
-    # 3. Mark order as paid
     db_order.status = "paid"
     db_order.razorpay_payment_id = payload.razorpay_payment_id
     db_order.paid_at = datetime.utcnow()
     await db_order.save()
 
-    # 4. Unlock contact on the help request
     req = await models.HelpRequest.find_one(models.HelpRequest.id == db_order.request_id) if db_order.request_id else None
     if req:
-        req.contact_unlocked = True
+        req.posting_fee_paid = True
+        req.status = "open"
         await req.save()
 
-    # 5. Notify helper
-    if req and req.helper_id:
-        helper = await models.User.find_one(models.User.id == req.helper_id)
-        if helper:
-            await models.Notification(
-                user_id=helper.id,
-                type="contact_unlock",
-                title="Contact Details Unlocked",
-                message=f"A student has unlocked your contact details for request '{req.title}'. They can now reach you directly.",
-                related_request_id=req.id,
-            ).insert()
-
-    # 6. Notify student
-    await models.Notification(
-        user_id=current_user.id,
-        type="contact_unlock",
-        title="Contact Details Unlocked!",
-        message=f"You have successfully unlocked the helper's contact details for '{req.title if req else 'your request'}'. You can now reach them directly.",
-        related_request_id=req.id if req else None,
-    ).insert()
-
-    await utils.log_admin_action(
-        current_user.id, "contact_unlock_payment",
-        f"₹{CONTACT_UNLOCK_FEE} paid — Contact unlocked for Request #{str(db_order.request_id)}"
+    await _notify(
+        current_user.id, "posting_fee_paid",
+        "Assignment Published!",
+        f"Your assignment '{req.title if req else ''}' is now live. Helpers can see and accept it.",
+        req.id if req else None,
     )
 
     return schemas.PaymentVerifyResponse(
         success=True,
-        message="Payment verified. Contact details are now unlocked!",
-        amount_paid=CONTACT_UNLOCK_FEE,
+        message="Posting fee paid. Your assignment is now live!",
+        amount_paid=POSTING_FEE,
     )
 
 
-# ── Verify Payment Button ────────────────────────────────────────────────────
+# ── Assignment Payment — create order ────────────────────────────────────────
 
-@payments_router.post("/verify-button", response_model=schemas.PaymentVerifyResponse)
-async def verify_button_payment(
-    payload: schemas.PaymentButtonVerifyRequest,
+@payments_router.post("/create-assignment-order", response_model=schemas.PaymentOrderOut)
+async def create_assignment_order(
+    payload: schemas.PaymentOrderCreate,
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    client = _rzp()
+    auth.check_role(current_user, ["student"])
 
-    # 1. Verify Payment Button signature
-    try:
-        client.utility.verify_payment_link_signature({
-            "razorpay_payment_link_id":               payload.razorpay_payment_link_id,
-            "razorpay_payment_link_reference_id":      payload.razorpay_payment_link_reference_id,
-            "razorpay_payment_link_status":            "paid",
-            "razorpay_payment_id":                     payload.razorpay_payment_id,
-            "razorpay_signature":                      payload.razorpay_signature,
-        })
-    except Exception:
-        raise HTTPException(status_code=400, detail="Payment signature verification failed — possible tampering")
-
-    # 2. Resolve request
     req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(payload.request_id))
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.student_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your request")
-    if req.contact_unlocked:
-        raise HTTPException(status_code=400, detail="Contact already unlocked")
+    if req.status != "awaiting_payment":
+        raise HTTPException(status_code=400, detail="Assignment work has not been verified by admin yet")
+    if not req.budget or req.budget <= 0:
+        raise HTTPException(status_code=400, detail="Request has no valid budget set")
 
-    # 3. Unlock contact
-    req.contact_unlocked = True
-    await req.save()
+    client = _rzp()
+    amount_paise = int(req.budget * 100)
 
-    # 4. Record the order
+    try:
+        order = client.order.create({
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": f"assign_{str(req.id)}",
+            "notes": {"request_id": str(req.id), "type": "assignment_payment"},
+        })
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay order creation failed: {e}")
+
     db_order = models.RazorpayOrder(
         request_id=req.id,
         student_id=current_user.id,
-        razorpay_order_id=payload.razorpay_payment_link_id,
-        amount=CONTACT_UNLOCK_FEE,
-        status="paid",
-        razorpay_payment_id=payload.razorpay_payment_id,
-        paid_at=datetime.utcnow(),
+        razorpay_order_id=order["id"],
+        order_type="assignment_payment",
+        amount=req.budget,
+        status="created",
     )
     await db_order.insert()
 
-    # 5. Notify helper
-    if req.helper_id:
-        helper = await models.User.find_one(models.User.id == req.helper_id)
-        if helper:
-            await models.Notification(
-                user_id=helper.id,
-                type="contact_unlock",
-                title="Contact Details Unlocked",
-                message=f"A student has unlocked your contact details for request '{req.title}'.",
-                related_request_id=req.id,
-            ).insert()
+    return schemas.PaymentOrderOut(
+        razorpay_order_id=order["id"],
+        amount=amount_paise,
+        currency="INR",
+        request_title=req.title,
+        request_id=str(req.id),
+    )
 
-    # 6. Notify student
-    await models.Notification(
-        user_id=current_user.id,
-        type="contact_unlock",
-        title="Contact Details Unlocked!",
-        message=f"You have successfully unlocked the helper's contact details for '{req.title}'.",
-        related_request_id=req.id,
-    ).insert()
+
+# ── Assignment Payment — verify + auto-payout ────────────────────────────────
+
+@payments_router.post("/verify-assignment-payment", response_model=schemas.AssignmentPaymentVerifyResponse)
+async def verify_assignment_payment(
+    payload: schemas.PaymentVerifyRequest,
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    client = _rzp()
+
+    try:
+        client.utility.verify_payment_signature({
+            "razorpay_order_id":   payload.razorpay_order_id,
+            "razorpay_payment_id": payload.razorpay_payment_id,
+            "razorpay_signature":  payload.razorpay_signature,
+        })
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payment signature verification failed")
+
+    db_order = await models.RazorpayOrder.find_one(
+        models.RazorpayOrder.razorpay_order_id == payload.razorpay_order_id
+    )
+    if not db_order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if db_order.student_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Order does not belong to you")
+    if db_order.status == "paid":
+        raise HTTPException(status_code=400, detail="Payment already verified")
+
+    req = await models.HelpRequest.find_one(models.HelpRequest.id == db_order.request_id) if db_order.request_id else None
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    # Calculate split
+    platform_fee   = round(db_order.amount * (COMMISSION_PERCENT / 100), 2)
+    helper_amount  = round(db_order.amount - platform_fee, 2)
+
+    # Initiate payout to helper's UPI
+    payout_id = None
+    helper = await models.User.find_one(models.User.id == req.helper_id) if req.helper_id else None
+    if helper and helper.upi_id and RAZORPAY_ACCOUNT_NUM:
+        payout_id = await _initiate_payout(client, helper, helper_amount)
+
+    # Mark order paid
+    db_order.status = "paid"
+    db_order.razorpay_payment_id = payload.razorpay_payment_id
+    db_order.paid_at = datetime.utcnow()
+    db_order.platform_fee_amount = platform_fee
+    db_order.helper_payout_amount = helper_amount
+    db_order.razorpay_payout_id = payout_id
+    await db_order.save()
+
+    # Mark request completed
+    req.status = "completed"
+    req.payout_initiated = payout_id is not None
+    await req.save()
+
+    if helper:
+        helper.completed_tasks += 1
+        await helper.save()
+
+    # Notifications
+    await _notify(
+        current_user.id, "payment_confirmed",
+        "Payment Confirmed!",
+        f"Your payment of ₹{db_order.amount:.0f} is confirmed. Your assignment is ready to download.",
+        req.id,
+    )
+    if helper:
+        upi_display = helper.upi_id if helper.upi_id else "your registered UPI"
+        await _notify(
+            helper.id, "payout_initiated",
+            "Payment Received!",
+            f"The student paid ₹{db_order.amount:.0f} for '{req.title}'. ₹{helper_amount:.0f} is being transferred to {upi_display}.",
+            req.id,
+        )
 
     await utils.log_admin_action(
-        current_user.id, "contact_unlock_payment",
-        f"₹{CONTACT_UNLOCK_FEE} paid via Payment Button — Contact unlocked for Request #{str(req.id)}"
+        current_user.id, "assignment_payment",
+        f"₹{db_order.amount:.0f} paid for Request #{str(req.id)} — platform ₹{platform_fee:.0f}, helper ₹{helper_amount:.0f}"
     )
 
-    return schemas.PaymentVerifyResponse(
+    return schemas.AssignmentPaymentVerifyResponse(
         success=True,
-        message="Payment verified. Contact details are now unlocked!",
-        amount_paid=CONTACT_UNLOCK_FEE,
+        message="Payment confirmed. Your assignment is ready to download!",
+        amount_paid=db_order.amount,
+        platform_fee=platform_fee,
+        helper_payout=helper_amount,
     )
+
+
+async def _initiate_payout(client: razorpay.Client, helper: models.User, amount_rupees: float) -> str | None:
+    try:
+        contact = client.contact.create({
+            "name": helper.name,
+            "email": helper.email,
+            "contact": helper.phone_number or "",
+            "type": "vendor",
+        })
+        fund_account = client.fund_account.create({
+            "contact_id": contact["id"],
+            "account_type": "vpa",
+            "vpa": {"address": helper.upi_id},
+        })
+        payout = client.payout.create({
+            "account_number": RAZORPAY_ACCOUNT_NUM,
+            "fund_account_id": fund_account["id"],
+            "amount": int(amount_rupees * 100),
+            "currency": "INR",
+            "mode": "UPI",
+            "purpose": "payout",
+            "queue_if_low_balance": True,
+        })
+        return payout["id"]
+    except Exception as e:
+        # Log but don't fail the payment — admin can manual-transfer
+        await utils.log_admin_action(
+            helper.id, "payout_failed",
+            f"Auto-payout of ₹{amount_rupees:.0f} to {helper.upi_id} failed: {e}"
+        )
+        return None
 
 
 # ── Payment History ───────────────────────────────────────────────────────────
@@ -256,7 +395,10 @@ async def get_history(current_user: models.User = Depends(auth.get_current_user)
         {
             "id": str(o.id),
             "request_id": str(o.request_id) if o.request_id else None,
+            "order_type": o.order_type,
             "amount": o.amount,
+            "platform_fee": o.platform_fee_amount,
+            "helper_payout": o.helper_payout_amount,
             "status": o.status,
             "razorpay_payment_id": o.razorpay_payment_id,
             "paid_at": o.paid_at.isoformat() if o.paid_at else None,
@@ -265,7 +407,7 @@ async def get_history(current_user: models.User = Depends(auth.get_current_user)
     ]
 
 
-# ── Admin: all contact-unlock transactions ────────────────────────────────────
+# ── Admin: all transactions ───────────────────────────────────────────────────
 
 @payments_router.get("/admin/orders")
 async def admin_orders(current_user: models.User = Depends(auth.get_current_admin)):
@@ -275,13 +417,17 @@ async def admin_orders(current_user: models.User = Depends(auth.get_current_admi
     result = []
     for o in orders:
         student = await models.User.find_one(models.User.id == o.student_id) if o.student_id else None
-        req = await models.HelpRequest.find_one(models.HelpRequest.id == o.request_id) if o.request_id else None
+        req     = await models.HelpRequest.find_one(models.HelpRequest.id == o.request_id) if o.request_id else None
         result.append({
             "id": str(o.id),
+            "order_type": o.order_type,
             "student_name": student.name if student else "Unknown",
             "student_email": student.email if student else "",
             "request_title": req.title if req else "Unknown",
             "amount": o.amount,
+            "platform_fee": o.platform_fee_amount,
+            "helper_payout": o.helper_payout_amount,
+            "razorpay_payout_id": o.razorpay_payout_id,
             "razorpay_payment_id": o.razorpay_payment_id,
             "paid_at": o.paid_at.isoformat() if o.paid_at else None,
         })

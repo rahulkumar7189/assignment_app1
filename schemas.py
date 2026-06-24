@@ -15,8 +15,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    whatsapp_number: Optional[str] = None
-    telegram_id: Optional[str] = None
+    upi_id: Optional[str] = None  # required for helpers
 
 
 class UserLogin(BaseModel):
@@ -31,8 +30,6 @@ class UserOut(UserBase):
     is_suspended: bool
     is_verified: bool
     created_at: datetime
-    whatsapp_number: Optional[str] = None
-    telegram_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -109,15 +106,16 @@ class HelpRequestOut(HelpRequestBase):
     student_id: PyObjectId
     helper_id: Optional[PyObjectId] = None
     status: str
-    contact_unlocked: bool = False
+    posting_fee_paid: bool = False
     attachments: Optional[List[str]] = None
     created_at: datetime
     student_name: Optional[str] = None
     helper_name: Optional[str] = None
-    peer_phone: Optional[str] = None
-    peer_email: Optional[str] = None
-    peer_whatsapp: Optional[str] = None
-    peer_telegram: Optional[str] = None
+    # Work delivery — file only accessible after payment (controlled by endpoint)
+    work_file_available: bool = False
+    work_verified: bool = False
+    work_rejected_reason: Optional[str] = None
+    payout_initiated: bool = False
 
     class Config:
         from_attributes = True
@@ -177,6 +175,7 @@ class AdminUserOut(BaseModel):
     email: str
     role: str
     phone_number: Optional[str] = None
+    upi_id: Optional[str] = None
     plain_password: Optional[str] = None
     rating: float
     completed_tasks: int
@@ -278,22 +277,40 @@ class PaymentVerifyResponse(BaseModel):
     amount_paid: float
 
 
-class PaymentButtonVerifyRequest(BaseModel):
-    razorpay_payment_link_id: str
-    razorpay_payment_link_reference_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
-    request_id: str
+class AssignmentPaymentVerifyResponse(BaseModel):
+    success: bool
+    message: str
+    amount_paid: float
+    platform_fee: float
+    helper_payout: float
 
 
 class RazorpayOrderOut(BaseModel):
     id: PyObjectId
     request_id: Optional[PyObjectId] = None
+    order_type: str
     amount: float
     status: str
+    platform_fee_amount: Optional[float] = None
+    helper_payout_amount: Optional[float] = None
     razorpay_payment_id: Optional[str] = None
     paid_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# Work verification
+class WorkVerifyRequest(BaseModel):
+    action: str   # "approve" | "reject"
+    reason: Optional[str] = None
+
+
+# Razorpay Payment Button verification (for ₹9 posting fee)
+class ButtonPaymentVerifyRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_payment_link_id: str
+    razorpay_payment_link_reference_id: str
+    razorpay_signature: str
+    request_id: str

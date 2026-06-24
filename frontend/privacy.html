@@ -21,15 +21,18 @@
                     <i class="fas fa-graduation-cap"></i>
                     AcadMate
                 </a>
-                <div class="nav-links">
+                <div class="nav-links" id="mainNavLinks">
                     <a href="index.html">Home</a>
                     <a href="login.html" class="btn btn-outline">Login</a>
                 </div>
+                <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu" onclick="toggleMobileNav()">
+                    <i class="fas fa-bars"></i>
+                </button>
             </nav>
         </div>
     </header>
 
-    <main class="container" style="padding-top: 120px; padding-bottom: 80px; max-width: 800px;">
+    <main class="container" style="padding-top: 120px; padding-bottom: 80px; max-width: 800px; width: 100%;">
         <h1 style="font-size: 2.5rem; margin-bottom: 2rem;">Privacy Policy</h1>
         <p style="color: var(--secondary); margin-bottom: 2rem;">Last updated: June 2026</p>
 
@@ -40,11 +43,10 @@
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">1. Information We Collect</h2>
                 <p style="margin-bottom: 0.75rem;">When you register on AcadMate, we collect the following information:</p>
                 <ul style="list-style-position: inside; color: var(--secondary);">
-                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">Full Name</strong> — to identify you on the platform</li>
-                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">College Email</strong> — for account authentication</li>
-                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">Phone Number</strong> — shared with the other party after contact unlock</li>
-                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">WhatsApp Number</strong> (optional) — shared after contact unlock if provided</li>
-                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">Telegram ID</strong> (optional) — shared after contact unlock if provided</li>
+                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">Full Name</strong> — your first name is shown anonymously to the other party</li>
+                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">College Email</strong> — for account authentication only, never shared</li>
+                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">Phone Number</strong> — used for payment-related communication only, never shared with other users</li>
+                    <li style="margin-bottom: 0.4rem;"><strong style="color: var(--text-dark);">UPI ID</strong> (helpers only) — used exclusively to transfer payouts after assignment completion</li>
                 </ul>
             </section>
 
@@ -52,21 +54,23 @@
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">2. How We Use Your Information</h2>
                 <ul style="list-style-position: inside; color: var(--secondary);">
                     <li style="margin-bottom: 0.4rem;">To match students with helpers for academic requests</li>
-                    <li style="margin-bottom: 0.4rem;">To reveal contact details (phone, email, WhatsApp, Telegram) to the other party after the &#8377;20 contact-unlock fee is paid</li>
+                    <li style="margin-bottom: 0.4rem;">To process payments and transfer helper payouts via Razorpay</li>
                     <li style="margin-bottom: 0.4rem;">To send in-platform notifications about your requests</li>
                     <li style="margin-bottom: 0.4rem;">To maintain platform security and prevent abuse</li>
                 </ul>
+                <p style="margin-top: 0.75rem;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;font-size:0.85rem;color:#065f46;">
+                    <strong>Anonymity guarantee:</strong> Contact details (phone, email, WhatsApp, Telegram) of students and helpers are <strong>never</strong> shared with each other. All communication and work delivery happens exclusively through the AcadMate platform.
+                </p>
             </section>
 
-            <section
-                style="margin-bottom: 2rem; border-left: 4px solid var(--primary); background: #f8fafc; padding: 1.5rem; border-radius: 0 8px 8px 0;">
+            <section style="margin-bottom: 2rem; border-left: 4px solid var(--primary); background: #f8fafc; padding: 1.5rem; border-radius: 0 8px 8px 0;">
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">3. Payment Data</h2>
-                <p>AcadMate does <strong>not</strong> store your card numbers, UPI IDs, or any payment credentials. All payment processing is handled securely by <strong>Razorpay</strong>. We only store a payment reference ID and the amount paid (&#8377;20) to confirm contact unlock status.</p>
+                <p>AcadMate does <strong>not</strong> store your card numbers, bank account details, or full UPI credentials. Helpers' UPI IDs are stored only for payout purposes. All payment processing is handled securely by <strong>Razorpay</strong>. We store only payment reference IDs, amounts, and split details for record-keeping and support.</p>
             </section>
 
             <section style="margin-bottom: 2rem;">
                 <h2 style="color: var(--primary); margin-bottom: 1rem;">4. Data Sharing</h2>
-                <p style="margin-bottom: 0.75rem;">Your contact details are shared <strong>only</strong> with the specific student or helper on a request where the &#8377;20 unlock fee has been paid. We do not sell, rent, or share your personal information with any third parties for marketing purposes.</p>
+                <p style="margin-bottom: 0.75rem;">Your personal information is <strong>never</strong> shared with other users of the platform. Only a helper's first name is shown to students (and vice versa). We share your name, email, and UPI ID with Razorpay only as required to process payouts. We do not sell, rent, or share your data with any third parties for marketing purposes.</p>
             </section>
 
             <section style="margin-bottom: 2rem;">
@@ -95,6 +99,22 @@
             <p style="color: #64748b; font-size: 0.875rem;">&copy; 2026 AcadMate. All rights reserved.</p>
         </div>
     </footer>
+    <script>
+        function toggleMobileNav() {
+            const nav = document.getElementById('mainNavLinks');
+            const btn = document.getElementById('mobileMenuBtn');
+            const isOpen = nav.classList.toggle('open');
+            btn.innerHTML = isOpen ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+        }
+        document.addEventListener('click', function (e) {
+            const nav = document.getElementById('mainNavLinks');
+            const btn = document.getElementById('mobileMenuBtn');
+            if (nav && btn && !nav.contains(e.target) && !btn.contains(e.target)) {
+                nav.classList.remove('open');
+                btn.innerHTML = '<i class="fas fa-bars"></i>';
+            }
+        });
+    </script>
 </body>
 
 </html>

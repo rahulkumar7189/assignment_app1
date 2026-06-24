@@ -13,8 +13,7 @@ class User(Document):
     plain_password: Optional[str] = None
     role: str  # student, helper, admin
     phone_number: Optional[str] = None
-    whatsapp_number: Optional[str] = None
-    telegram_id: Optional[str] = None
+    upi_id: Optional[str] = None  # required for helpers — used for automatic payouts
     rating: float = 0.0
     completed_tasks: int = 0
     is_suspended: bool = False
@@ -34,14 +33,24 @@ class HelpRequest(Document):
     description: str
     deadline: datetime
     budget: Optional[float] = None
-    status: str = "open"  # open, in_progress, completed, cancelled
-    contact_unlocked: bool = False
+    # Status flow: pending_posting_fee → open → in_progress → work_submitted → awaiting_payment → completed | cancelled
+    status: str = "pending_posting_fee"
+    posting_fee_paid: bool = False
     is_urgent_print: bool = False
     attachments: Optional[List[str]] = None
     student_id: PydanticObjectId
     helper_id: Optional[PydanticObjectId] = None
-    student_name: Optional[str] = None  # denormalized — avoids N+1 queries
-    helper_name: Optional[str] = None   # denormalized
+    student_name: Optional[str] = None  # denormalized
+    helper_name: Optional[str] = None   # denormalized (first name only — anonymous)
+    # Work delivery fields
+    work_file: Optional[str] = None
+    work_submitted_at: Optional[datetime] = None
+    work_verified: bool = False
+    work_verified_at: Optional[datetime] = None
+    work_rejected_reason: Optional[str] = None
+    # Payout tracking
+    payout_initiated: bool = False
+    payout_completed: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
@@ -165,9 +174,13 @@ class RazorpayOrder(Document):
     request_id: Optional[PydanticObjectId] = None
     student_id: PydanticObjectId
     razorpay_order_id: str
-    amount: float  # always 20.0
+    order_type: str = "posting_fee"  # "posting_fee" | "assignment_payment"
+    amount: float
     status: str = "created"  # created, paid, failed
     razorpay_payment_id: Optional[str] = None
+    platform_fee_amount: Optional[float] = None
+    helper_payout_amount: Optional[float] = None
+    razorpay_payout_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     paid_at: Optional[datetime] = None
 

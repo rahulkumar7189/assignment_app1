@@ -188,41 +188,53 @@
 
     <!-- Request Modal -->
     <div id="requestModal" class="modal-overlay">
-        <div class="auth-card" style="max-width: 600px;">
-            <h3>Post a New Request</h3>
-            <div style="background:#fefce8;border:1px solid #fde047;border-radius:0.5rem;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.77rem;color:#713f12;line-height:1.5;">
-                <strong>Note:</strong> AcadMate only facilitates introductions. Any work agreement, payment, and communication with your helper is entirely between you and them. The platform is not responsible for the quality, delivery, or any outcome of the work.
+        <div style="background:#fff;border-radius:16px;width:90%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;">
+            <!-- Pinned header -->
+            <div style="padding:1.25rem 1.5rem 0.75rem;flex-shrink:0;border-bottom:1px solid #f1f5f9;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+                    <h3 style="margin:0;font-size:1.05rem;">Post a New Request</h3>
+                    <button onclick="hideRequestModal()" style="background:none;border:none;font-size:1.3rem;color:#94a3b8;cursor:pointer;line-height:1;padding:0.2rem;">&times;</button>
+                </div>
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:0.5rem;padding:0.55rem 0.85rem;font-size:0.74rem;color:#1e40af;line-height:1.5;">
+                    <strong>How it works:</strong> Pay <strong>&#8377;9</strong> to publish. A helper submits work, admin verifies, then you pay the budget — 90% goes to the helper automatically.
+                </div>
             </div>
-            <form id="requestForm">
-                <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" id="reqTitle" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label>Subject</label>
-                    <input type="text" id="reqSubject" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea id="reqDesc" class="form-input" style="height: 100px;" required></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Deadline</label>
-                    <input type="datetime-local" id="reqDeadline" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label>Attachments (PDF, Images, Docs)</label>
-                    <input type="file" id="reqFiles" class="form-input" multiple>
-                    <small style="color: var(--secondary);">You can upload multiple files.</small>
-                </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 1rem; padding: 0.5rem; border-radius: 8px; background: #fff1f2; border: 1px dashed #fda4af;">
-                    <input type="checkbox" id="reqUrgentPrint" style="width: auto; height: 18px; width: 18px;">
-                    <label for="reqUrgentPrint" style="margin: 0; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #e11d48;"><i class="fas fa-print"></i> Require Urgent Print</label>
-                </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%;">Submit Request</button>
-                <button type="button" onclick="hideRequestModal()" class="btn btn-outline"
-                    style="width: 100%; margin-top: 1rem;">Cancel</button>
-            </form>
+            <!-- Scrollable form body (min-height:0 is required for flex overflow-y scroll to work) -->
+            <div style="overflow-y:auto;padding:1rem 1.5rem 1.5rem;flex:1;min-height:0;">
+                <form id="requestForm">
+                    <div class="form-group" style="margin-bottom:1rem;">
+                        <label style="font-size:0.85rem;">Title</label>
+                        <input type="text" id="reqTitle" class="form-input" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom:1rem;">
+                        <label style="font-size:0.85rem;">Subject</label>
+                        <input type="text" id="reqSubject" class="form-input" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom:1rem;">
+                        <label style="font-size:0.85rem;">Description</label>
+                        <textarea id="reqDesc" class="form-input" style="height:80px;resize:vertical;" required></textarea>
+                    </div>
+                    <div class="form-grid-2">
+                        <div>
+                            <label style="font-size:0.85rem;display:block;margin-bottom:0.4rem;">Deadline</label>
+                            <input type="datetime-local" id="reqDeadline" class="form-input" required>
+                        </div>
+                        <div>
+                            <label style="font-size:0.85rem;display:block;margin-bottom:0.4rem;">Budget (&#8377;) <span style="color:#dc2626;font-size:0.7rem;">Required</span></label>
+                            <input type="number" id="reqBudget" class="form-input" placeholder="e.g. 500" min="50" step="10" required>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:1rem;">
+                        <label style="font-size:0.85rem;">Attachments <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
+                        <input type="file" id="reqFiles" class="form-input" multiple style="padding:0.4rem;">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;border-radius:8px;background:#fff1f2;border:1px dashed #fda4af;margin-bottom:1.25rem;">
+                        <input type="checkbox" id="reqUrgentPrint" style="width:16px;height:16px;flex-shrink:0;">
+                        <label for="reqUrgentPrint" style="margin:0;font-size:0.82rem;font-weight:600;color:#e11d48;cursor:pointer;"><i class="fas fa-print"></i> Require Urgent Print</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%;padding:0.85rem;">Continue to Payment (&#8377;9)</button>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -285,51 +297,88 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
-    <!-- Contact unlock disclaimer + payment button modal -->
-    <div id="unlockDisclaimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9998;align-items:center;justify-content:center;">
+
+    <!-- Posting Fee Modal (₹9 to publish assignment — Razorpay Payment Button) -->
+    <div id="postingFeeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9998;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:1.25rem;padding:2rem;max-width:420px;width:90%;box-shadow:0 25px 60px rgba(0,0,0,0.25);">
-            <h3 style="margin:0 0 0.75rem;color:#1e293b;">Unlock Contact Details — &#8377;20</h3>
-            <div style="background:#fefce8;border:1px solid #fde047;border-radius:0.5rem;padding:0.85rem;margin-bottom:1rem;font-size:0.75rem;color:#713f12;line-height:1.55;">
-                <strong>Important:</strong> Assignment Helper acts only as a connection platform. The platform's sole service is facilitating introductions and unlocking contact details after payment of the &#8377;20 platform fee. Any agreement, payment, service, dispute, misconduct, or any other issue arising between you and the helper is solely your responsibility. Assignment Helper shall not be liable for any damages resulting from interactions between users.
+            <h3 style="margin:0 0 0.75rem;color:#1e293b;"><i class="fas fa-bullhorn" style="color:#4f46e5;"></i> Publish Your Assignment</h3>
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:0.5rem;padding:0.85rem;margin-bottom:1rem;font-size:0.78rem;color:#1e40af;line-height:1.55;">
+                A one-time <strong>&#8377;9 listing fee</strong> is required to publish your assignment so helpers can see and accept it. This fee is non-refundable.
             </div>
-            <p style="font-size:0.88rem;color:#475569;margin-bottom:1.25rem;">By paying <strong>&#8377;20</strong>, you permanently unlock the helper's phone, email, WhatsApp, and Telegram for this request.</p>
-
-            <!-- Razorpay Payment Button — request_id injected by JS -->
-            <form id="rzpPaymentButtonForm" style="margin-bottom:0.75rem;">
-                <input type="hidden" id="rzpRequestIdNote" name="razorpay[notes][request_id]" value="">
+            <p style="font-size:0.88rem;color:#475569;margin-bottom:1.25rem;">Once published, helpers can browse and accept your assignment. You only pay the full amount <em>after</em> admin verifies the completed work.</p>
+            <!-- Razorpay Payment Button — request_id stored in hidden field -->
+            <form id="postingFeePaymentForm" style="margin-bottom:0.75rem;">
+                <input type="hidden" id="postingFeeRequestId" name="razorpay[notes][request_id]" value="">
                 <script src="https://checkout.razorpay.com/v1/payment-button.js"
-                        data-payment_button_id="pl_T4KOk1q87ousl2" async></script>
+                        data-payment_button_id="pl_T5R5GRnuPiVJNZ" async></script>
             </form>
-
-            <button onclick="document.getElementById('unlockDisclaimerModal').style.display='none';"
-                    style="width:100%;padding:0.75rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.75rem;font-size:0.9rem;font-weight:600;cursor:pointer;margin-top:0.25rem;">
+            <button onclick="document.getElementById('postingFeeModal').style.display='none';"
+                    style="width:100%;padding:0.75rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.75rem;font-size:0.9rem;font-weight:600;cursor:pointer;">
                 Cancel
             </button>
         </div>
     </div>
 
-    <!-- Payment success modal -->
+    <!-- Submit Work Modal (helper uploads completed file) -->
+    <div id="submitWorkModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9998;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:1.25rem;padding:2rem;max-width:420px;width:90%;box-shadow:0 25px 60px rgba(0,0,0,0.25);">
+            <h3 style="margin:0 0 0.75rem;color:#1e293b;"><i class="fas fa-upload" style="color:#10b981;"></i> Submit Completed Work</h3>
+            <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.85rem;margin-bottom:1rem;font-size:0.78rem;color:#065f46;line-height:1.55;">
+                Upload the completed assignment file. An admin will verify it before the student is asked to pay. Do not share your contact details in the file.
+            </div>
+            <form id="submitWorkForm">
+                <div class="form-group">
+                    <label>Completed Assignment File</label>
+                    <input type="file" id="workFileInput" class="form-input" required accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.xls,.xlsx,.zip,.png,.jpg,.jpeg">
+                    <small style="color:var(--secondary);">PDF, Word, ZIP, images — max single file</small>
+                </div>
+                <button type="submit" style="width:100%;padding:0.85rem;background:#10b981;color:#fff;border:none;border-radius:0.75rem;font-size:1rem;font-weight:600;cursor:pointer;margin-bottom:0.5rem;">
+                    Submit for Verification
+                </button>
+                <button type="button" onclick="document.getElementById('submitWorkModal').style.display='none';"
+                        style="width:100%;padding:0.75rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.75rem;font-size:0.9rem;font-weight:600;cursor:pointer;">
+                    Cancel
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Pay For Work Modal (student pays full budget) -->
+    <div id="payForWorkModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9998;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:1.25rem;padding:2rem;max-width:420px;width:90%;box-shadow:0 25px 60px rgba(0,0,0,0.25);">
+            <h3 style="margin:0 0 0.75rem;color:#1e293b;"><i class="fas fa-shield-check" style="color:#10b981;"></i> Work Verified — Pay to Download</h3>
+            <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.85rem;margin-bottom:1rem;font-size:0.78rem;color:#065f46;line-height:1.55;">
+                Admin has verified the completed work. Pay the agreed amount to download it instantly.
+            </div>
+            <p style="font-size:0.88rem;color:#475569;margin-bottom:0.5rem;">Amount: <strong id="payForWorkAmount" style="font-size:1.2rem;color:#1e293b;">₹—</strong></p>
+            <p style="font-size:0.78rem;color:#94a3b8;margin-bottom:1.25rem;">90% goes to the helper automatically. Platform fee: 10%.</p>
+            <button id="payForWorkBtn" onclick="payForWork()"
+                    style="width:100%;padding:0.85rem;background:#10b981;color:#fff;border:none;border-radius:0.75rem;font-size:1rem;font-weight:600;cursor:pointer;margin-bottom:0.5rem;">
+                Pay &amp; Download
+            </button>
+            <button onclick="document.getElementById('payForWorkModal').style.display='none';"
+                    style="width:100%;padding:0.75rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.75rem;font-size:0.9rem;font-weight:600;cursor:pointer;">
+                Later
+            </button>
+        </div>
+    </div>
+
+    <!-- Payment Success Modal -->
     <div id="paymentModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:1.25rem;padding:2.5rem;max-width:380px;width:90%;text-align:center;box-shadow:0 25px 60px rgba(0,0,0,0.25);">
-            <div style="font-size:3.5rem;margin-bottom:1rem;">&#x1F513;</div>
-            <h2 style="margin:0 0 0.5rem;color:#15803d;">Contact Unlocked!</h2>
-            <p style="font-size:1.3rem;font-weight:700;color:#1e293b;margin:0.5rem 0;">&#8377;20 paid</p>
-            <p style="font-size:0.88rem;color:#475569;margin:1rem 0 1.5rem;">
-                You can now see the helper's phone number, email, WhatsApp, and Telegram in your request card.
-            </p>
+            <div style="font-size:3.5rem;margin-bottom:1rem;" id="paymentModalIcon">&#x2705;</div>
+            <h2 style="margin:0 0 0.5rem;" id="paymentModalTitle" style="color:#15803d;">Payment Confirmed!</h2>
+            <p style="font-size:0.88rem;color:#475569;margin:1rem 0 1.5rem;" id="paymentModalMsg"></p>
             <button onclick="document.getElementById('paymentModal').style.display='none';location.reload();"
                     style="width:100%;padding:0.85rem;background:#4f46e5;color:#fff;border:none;border-radius:0.75rem;font-size:1rem;font-weight:600;cursor:pointer;">
-                View Contact Details
+                OK
             </button>
         </div>
     </div>
 
     <footer style="margin-top:3rem;padding:1.5rem 0;border-top:1px solid var(--border);background:#f8fafc;">
         <div class="container" style="text-align:center;">
-            <p style="color:#94a3b8;font-size:0.72rem;line-height:1.6;max-width:700px;margin:0 auto;">
-                <strong style="color:#64748b;">Disclaimer:</strong>
-                Assignment Helper acts only as a connection platform between Students and Helpers. The platform's sole service is facilitating introductions and unlocking contact details after payment of the platform fee. Any agreement, payment, communication, service, deliverable, dispute, fraud, misconduct, plagiarism, academic integrity violation, copyright infringement, non-payment, poor-quality work, harassment, or any other issue arising between Students and Helpers is solely their responsibility. Assignment Helper shall not be liable for any direct, indirect, incidental, consequential, legal, academic, financial, or reputational damages resulting from interactions between users.
-            </p>
+            <p style="color:#94a3b8;font-size:0.72rem;">&copy; 2026 AcadMate. All rights reserved.</p>
         </div>
     </footer>
 

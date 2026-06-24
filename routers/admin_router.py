@@ -23,7 +23,18 @@ async def get_overview(current_user: models.User = Depends(auth.get_current_admi
     completed_requests = await models.HelpRequest.find(models.HelpRequest.status == "completed").count()
     total_transactions = await models.RazorpayOrder.find(models.RazorpayOrder.status == "paid").count()
 
-    revenue_summary = total_transactions * 20.0  # ₹20 per contact unlock
+    # Revenue = posting fees (₹9 each) + platform commission (10%) from assignment payments
+    posting_fee_orders = await models.RazorpayOrder.find(
+        models.RazorpayOrder.status == "paid",
+        models.RazorpayOrder.order_type == "posting_fee",
+    ).count()
+    assignment_orders = await models.RazorpayOrder.find(
+        models.RazorpayOrder.status == "paid",
+        models.RazorpayOrder.order_type == "assignment_payment",
+    ).to_list()
+    posting_fee_revenue = posting_fee_orders * float(os.getenv("POSTING_FEE", "9"))
+    commission_revenue = sum(o.platform_fee_amount or 0.0 for o in assignment_orders)
+    revenue_summary = round(posting_fee_revenue + commission_revenue, 2)
 
     return {
         "total_users": total_users,
@@ -283,6 +294,104 @@ async def resolve_dispute(dispute_id: str, payload: dict, current_user: models.U
 
     await utils.log_admin_action(current_user.id, "resolve_dispute", f"Resolved Dispute ID: {dispute_id}")
     return {"message": "Dispute resolved successfully"}
+
+
+# --- WORK VERIFICATION QUEUE ---
+
+@admin_router.get("/work-queue")
+async def get_work_queue(current_user: models.User = Depends(auth.get_current_admin)):
+    """All assignments where helper has submitted work awaiting admin review."""
+    auth.check_role(current_user, ["admin"])
+    reqs = await models.HelpRequest.find(
+        models.HelpRequest.status == "work_submitted"
+    ).sort("-work_submitted_at").to_list()
+    result = []
+    for r in reqs:
+        result.append({
+            "id": str(r.id),
+            "title": r.title,
+            "subject": r.subject,
+            "budget": r.budget,
+            "student_name": r.student_name or "Unknown",
+            "helper_name": r.helper_name or "Unknown",
+            "work_submitted_at": r.work_submitted_at.isoformat() if r.work_submitted_at else None,
+            "work_file": r.work_file,
+            "work_rejected_reason": r.work_rejected_reason,
+        })
+    return result
+
+
+@admin_router.get("/work/{request_id}/preview")
+async def preview_work_file(request_id: str, current_user: models.User = Depends(auth.get_current_admin)):
+    """Returns the submitted work file for admin review."""
+    from fastapi.responses import FileResponse
+    auth.check_role(current_user, ["admin"])
+    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
+    if not req or not req.work_file:
+        raise HTTPException(status_code=404, detail="No work file found")
+    if not os.path.exists(req.work_file):
+        raise HTTPException(status_code=404, detail="Work file missing from server")
+    return FileResponse(path=req.work_file, filename=os.path.basename(req.work_file))
+
+
+@admin_router.put("/requests/{request_id}/verify-work")
+async def verify_work(
+    request_id: str,
+    payload: schemas.WorkVerifyRequest,
+    current_user: models.User = Depends(auth.get_current_admin),
+):
+    """Admin approves or rejects submitted work."""
+    auth.check_role(current_user, ["admin"])
+    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.status != "work_submitted":
+        raise HTTPException(status_code=400, detail="Request is not in work_submitted state")
+
+    from routers.notifications_router import create_notification
+
+    if payload.action == "approve":
+        req.status = "awaiting_payment"
+        req.work_verified = True
+        req.work_verified_at = datetime.datetime.utcnow()
+        await req.save()
+
+        await create_notification(
+            req.student_id, "work_approved",
+            "Your Assignment is Ready!",
+            f"Admin verified the work for '{req.title}'. Please pay ₹{req.budget:.0f} to download it.",
+            related_request_id=req.id,
+        )
+        if req.helper_id:
+            await create_notification(
+                req.helper_id, "work_approved",
+                "Work Approved by Admin",
+                f"Your submitted work for '{req.title}' was approved. Waiting for student payment.",
+                related_request_id=req.id,
+            )
+        await utils.log_admin_action(current_user.id, "approve_work", f"Approved work for Request #{request_id}")
+        return {"message": "Work approved. Student has been notified to pay."}
+
+    elif payload.action == "reject":
+        req.status = "in_progress"
+        req.work_verified = False
+        req.work_rejected_reason = payload.reason or "Work did not meet requirements"
+        req.work_file = None
+        req.work_submitted_at = None
+        await req.save()
+
+        if req.helper_id:
+            await create_notification(
+                req.helper_id, "work_rejected",
+                "Work Rejected — Please Revise",
+                f"Admin rejected your submission for '{req.title}'. Reason: {req.work_rejected_reason}",
+                related_request_id=req.id,
+            )
+        await utils.log_admin_action(current_user.id, "reject_work", f"Rejected work for Request #{request_id}: {payload.reason}")
+        return {"message": "Work rejected. Helper has been notified to revise."}
+
+    else:
+        raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
 
 
 # --- MARKETPLACE ---

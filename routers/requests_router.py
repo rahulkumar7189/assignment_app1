@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from fastapi.responses import FileResponse
 from typing import List, Optional
 import models, schemas, auth, utils
 from routers.notifications_router import create_notification
 from beanie.odm.fields import PydanticObjectId
+from datetime import datetime
 import os, uuid
 
 router = APIRouter(prefix="/requests", tags=["requests"])
+
+WORK_UPLOAD_DIR = os.path.join("uploads", "work")
+os.makedirs(WORK_UPLOAD_DIR, exist_ok=True)
 
 
 @router.post("/", response_model=schemas.HelpRequestOut)
@@ -28,8 +33,7 @@ async def create_request(
             file_name = f"{uuid.uuid4()}{file_ext}"
             file_path = os.path.join("uploads", file_name)
             with open(file_path, "wb") as buffer:
-                content = await file.read()
-                buffer.write(content)
+                buffer.write(await file.read())
             attachment_paths.append(f"/uploads/{file_name}")
 
     new_req = models.HelpRequest(
@@ -42,17 +46,19 @@ async def create_request(
         student_name=current_user.name,
         is_urgent_print=is_urgent_print,
         attachments=attachment_paths if attachment_paths else None,
+        status="pending_posting_fee",
     )
     await new_req.insert()
-    return new_req
+    return _to_out(new_req, is_student=True, is_completed=False)
 
 
 @router.get("/", response_model=List[schemas.HelpRequestOut])
-async def list_requests(status: str = "open"):
-    return await models.HelpRequest.find(
-        models.HelpRequest.status == status,
-        models.HelpRequest.helper_id == None,
+async def list_requests():
+    """Public listing of open assignments (no contact info ever exposed)."""
+    reqs = await models.HelpRequest.find(
+        models.HelpRequest.status == "open",
     ).to_list()
+    return [_to_out(r) for r in reqs]
 
 
 @router.get("/my", response_model=List[schemas.HelpRequestOut])
@@ -60,51 +66,43 @@ async def list_my_requests(current_user: models.User = Depends(auth.get_current_
     if current_user.role == "student":
         reqs = await models.HelpRequest.find(
             models.HelpRequest.student_id == current_user.id
-        ).to_list()
+        ).sort("-created_at").to_list()
     else:
         reqs = await models.HelpRequest.find(
             models.HelpRequest.helper_id == current_user.id
-        ).to_list()
+        ).sort("-created_at").to_list()
 
-    enriched = []
+    result = []
     for r in reqs:
-        req_dict = r.model_dump(by_alias=False)
-        req_dict["id"] = str(r.id)
-        req_dict["student_id"] = str(r.student_id)
-        req_dict["helper_id"] = str(r.helper_id) if r.helper_id else None
-        req_dict["peer_phone"]    = None
-        req_dict["peer_email"]    = None
-        req_dict["peer_whatsapp"] = None
-        req_dict["peer_telegram"] = None
-
-        if r.contact_unlocked and r.helper_id and r.student_id:
-            if current_user.id == r.student_id:
-                peer = await models.User.find_one(models.User.id == r.helper_id)
-            else:
-                peer = await models.User.find_one(models.User.id == r.student_id)
-            if peer:
-                req_dict["peer_phone"]    = peer.phone_number
-                req_dict["peer_email"]    = peer.email
-                req_dict["peer_whatsapp"] = peer.whatsapp_number
-                req_dict["peer_telegram"] = peer.telegram_id
-
-        enriched.append(schemas.HelpRequestOut(**req_dict))
-    return enriched
+        is_student = (current_user.role == "student")
+        is_completed = (r.status == "completed")
+        result.append(_to_out(r, is_student=is_student, is_completed=is_completed))
+    return result
 
 
-@router.put("/{request_id}/pay-advance")
-async def pay_advance(request_id: str, current_user: models.User = Depends(auth.get_current_user)):
-    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
-    if not req:
-        raise HTTPException(status_code=404, detail="Request not found")
-    if req.student_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only the student can unlock contact details")
-    if req.status != "in_progress":
-        raise HTTPException(status_code=400, detail="Can only unlock contact for requests in progress")
-
-    req.contact_unlocked = True
-    await req.save()
-    return {"message": "Contact details unlocked"}
+def _to_out(r: models.HelpRequest, is_student: bool = False, is_completed: bool = False) -> schemas.HelpRequestOut:
+    """Build HelpRequestOut — contact info is NEVER included."""
+    return schemas.HelpRequestOut(
+        id=str(r.id),
+        title=r.title,
+        subject=r.subject,
+        description=r.description,
+        deadline=r.deadline,
+        budget=r.budget,
+        is_urgent_print=r.is_urgent_print,
+        student_id=str(r.student_id),
+        helper_id=str(r.helper_id) if r.helper_id else None,
+        status=r.status,
+        posting_fee_paid=r.posting_fee_paid,
+        attachments=r.attachments,
+        created_at=r.created_at,
+        student_name=r.student_name if not is_student else r.student_name,
+        helper_name=r.helper_name,
+        work_file_available=(is_student and is_completed and bool(r.work_file)),
+        work_verified=r.work_verified,
+        work_rejected_reason=r.work_rejected_reason,
+        payout_initiated=r.payout_initiated,
+    )
 
 
 @router.put("/{request_id}/accept")
@@ -116,15 +114,16 @@ async def accept_request(request_id: str, current_user: models.User = Depends(au
     if not req or req.status != "open" or req.helper_id is not None:
         raise HTTPException(status_code=400, detail="Request no longer available")
 
+    # Store only first name to keep helper somewhat anonymous to student in UI
     req.helper_id = current_user.id
-    req.helper_name = current_user.name
+    req.helper_name = current_user.name.split()[0]
     req.status = "in_progress"
     await req.save()
 
     await create_notification(
         req.student_id, "request_accepted",
-        "Request Accepted!",
-        f"{current_user.name} accepted your request: {req.title}",
+        "A Helper Accepted Your Assignment!",
+        f"A helper accepted your assignment '{req.title}'. They will upload the completed work once done.",
         related_request_id=req.id,
     )
 
@@ -132,31 +131,73 @@ async def accept_request(request_id: str, current_user: models.User = Depends(au
     return {"message": "Request accepted"}
 
 
-@router.put("/{request_id}/complete")
-async def complete_request(request_id: str, current_user: models.User = Depends(auth.get_current_user)):
+@router.post("/{request_id}/submit-work")
+async def submit_work(
+    request_id: str,
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Helper uploads completed assignment file. Admin must verify before student can pay/download."""
+    auth.check_role(current_user, ["helper"])
+
+    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.helper_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not the helper for this request")
+    if req.status not in ("in_progress", "work_submitted"):
+        raise HTTPException(status_code=400, detail="Work can only be submitted while the request is in progress")
+
+    # Save work file to uploads/work/{request_id}/
+    req_work_dir = os.path.join(WORK_UPLOAD_DIR, request_id)
+    os.makedirs(req_work_dir, exist_ok=True)
+
+    file_ext = os.path.splitext(file.filename)[1]
+    file_name = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(req_work_dir, file_name)
+    with open(file_path, "wb") as buffer:
+        buffer.write(await file.read())
+
+    req.work_file = file_path
+    req.work_submitted_at = datetime.utcnow()
+    req.status = "work_submitted"
+    req.work_verified = False
+    req.work_rejected_reason = None
+    await req.save()
+
+    # Notify all admins
+    admins = await models.User.find(models.User.role == "admin").to_list()
+    for admin in admins:
+        await create_notification(
+            admin.id, "work_submitted",
+            "Work Submitted — Needs Verification",
+            f"A helper submitted work for assignment '{req.title}'. Please review and approve or reject.",
+            related_request_id=req.id,
+        )
+
+    return {"message": "Work submitted successfully. Admin will review it shortly."}
+
+
+@router.get("/{request_id}/download-work")
+async def download_work(request_id: str, current_user: models.User = Depends(auth.get_current_user)):
+    """Student downloads work file only after payment (status=completed)."""
+    auth.check_role(current_user, ["student"])
+
     req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.student_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only student can complete the request")
+        raise HTTPException(status_code=403, detail="Not your request")
+    if req.status != "completed":
+        raise HTTPException(status_code=403, detail="Payment must be completed before downloading the work")
+    if not req.work_file or not os.path.exists(req.work_file):
+        raise HTTPException(status_code=404, detail="Work file not found")
 
-    req.status = "completed"
-    await req.save()
-
-    if req.helper_id:
-        helper = await models.User.find_one(models.User.id == req.helper_id)
-        if helper:
-            helper.completed_tasks += 1
-            await helper.save()
-
-        await create_notification(
-            req.helper_id, "request_completed",
-            "Request Completed!",
-            f"{current_user.name} marked '{req.title}' as completed.",
-            related_request_id=req.id,
-        )
-
-    return {"message": "Request marked as completed"}
+    return FileResponse(
+        path=req.work_file,
+        filename=os.path.basename(req.work_file),
+        media_type="application/octet-stream",
+    )
 
 
 @router.put("/{request_id}/cancel")
@@ -165,77 +206,13 @@ async def cancel_request(request_id: str, current_user: models.User = Depends(au
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.student_id != current_user.id and req.helper_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You are not authorized to cancel this request")
-    if req.status == "completed":
-        raise HTTPException(status_code=400, detail="Cannot cancel a completed request")
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this request")
+    if req.status in ("completed", "awaiting_payment"):
+        raise HTTPException(status_code=400, detail="Cannot cancel at this stage")
 
     req.status = "cancelled"
     await req.save()
     return {"message": "Request cancelled"}
-
-
-# --- ESCROW & MILESTONE ENDPOINTS ---
-
-@router.post("/{request_id}/milestones", response_model=schemas.MilestoneOut)
-async def create_milestone(request_id: str, milestone: schemas.MilestoneCreate, current_user: models.User = Depends(auth.get_current_user)):
-    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
-    if not req:
-        raise HTTPException(status_code=404, detail="Request not found")
-    if current_user.id not in [req.student_id, req.helper_id]:
-        raise HTTPException(status_code=403, detail="Not authorized for this request")
-
-    new_milestone = models.Milestone(
-        request_id=req.id,
-        amount=milestone.amount,
-        description=milestone.description,
-    )
-    await new_milestone.insert()
-
-    other_user_id = req.helper_id if current_user.id == req.student_id else req.student_id
-    if other_user_id:
-        await create_notification(
-            other_user_id, "milestone_created",
-            "New Milestone Added",
-            f"A new milestone of ₹{milestone.amount} has been added to '{req.title}'.",
-            related_request_id=req.id,
-        )
-    return new_milestone
-
-
-@router.get("/{request_id}/milestones", response_model=List[schemas.MilestoneOut])
-async def get_milestones(request_id: str, current_user: models.User = Depends(auth.get_current_user)):
-    req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
-    if not req or (current_user.id not in [req.student_id, req.helper_id] and current_user.role != "admin"):
-        raise HTTPException(status_code=404, detail="Request not found or unauthorized")
-
-    return await models.Milestone.find(
-        models.Milestone.request_id == PydanticObjectId(request_id)
-    ).to_list()
-
-
-@router.put("/milestones/{milestone_id}/pay")
-async def pay_milestone(milestone_id: str, current_user: models.User = Depends(auth.get_current_user)):
-    milestone = await models.Milestone.find_one(models.Milestone.id == PydanticObjectId(milestone_id))
-    if not milestone:
-        raise HTTPException(status_code=404, detail="Milestone not found")
-
-    req = await models.HelpRequest.find_one(models.HelpRequest.id == milestone.request_id)
-    if current_user.id != req.student_id:
-        raise HTTPException(status_code=403, detail="Only the student can pay the milestone")
-    if milestone.status == "paid":
-        raise HTTPException(status_code=400, detail="Milestone is already paid")
-
-    milestone.status = "paid"
-    await milestone.save()
-
-    if req.helper_id:
-        await create_notification(
-            req.helper_id, "milestone_paid",
-            "Milestone Paid!",
-            f"A milestone of ₹{milestone.amount} on '{req.title}' has been paid/released.",
-            related_request_id=req.id,
-        )
-    return {"message": "Milestone successfully paid"}
 
 
 # --- DISPUTE ENDPOINTS ---

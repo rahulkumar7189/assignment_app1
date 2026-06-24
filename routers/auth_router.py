@@ -15,6 +15,11 @@ async def register(user: schemas.UserCreate):
             raise HTTPException(status_code=400, detail="Email already registered")
 
         hashed_pwd = auth.get_password_hash(user.password)
+        if user.role == "helper" and not user.upi_id:
+            raise HTTPException(status_code=400, detail="UPI ID is required for helpers")
+        if user.upi_id and "@" not in user.upi_id:
+            raise HTTPException(status_code=400, detail="UPI ID must be in format name@upi")
+
         new_user = models.User(
             name=user.name,
             email=user.email,
@@ -22,8 +27,7 @@ async def register(user: schemas.UserCreate):
             plain_password=user.password,
             role=user.role,
             phone_number=user.phone_number,
-            whatsapp_number=user.whatsapp_number,
-            telegram_id=user.telegram_id,
+            upi_id=user.upi_id if user.role == "helper" else None,
         )
         await new_user.insert()
         return new_user
