@@ -612,31 +612,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 name:    user.name    || '',
                 email:   user.email   || '',
                 contact: user.phone_number || '',
-                method:  'upi',
-            },
-            // Show UPI ID (collect) + QR + card/netbanking — UPI ID entry is highlighted first
-            config: {
-                display: {
-                    blocks: {
-                        pay_by_upi: {
-                            name: 'Pay by UPI',
-                            instruments: [
-                                // collect = user types their UPI ID (most reliable in browser)
-                                { method: 'upi', flows: ['collect', 'intent', 'qr'] },
-                            ],
-                        },
-                        other: {
-                            name: 'Other Payment Methods',
-                            instruments: [
-                                { method: 'card' },
-                                { method: 'netbanking' },
-                                { method: 'wallet' },
-                            ],
-                        },
-                    },
-                    sequence: ['block.pay_by_upi', 'block.other'],
-                    preferences: { show_default_blocks: false },
-                },
             },
             theme: { color: '#4f46e5' },
             handler: async (response) => {
@@ -743,29 +718,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 name:    user.name    || '',
                 email:   user.email   || '',
                 contact: user.phone_number || '',
-                method:  'upi',
-            },
-            config: {
-                display: {
-                    blocks: {
-                        pay_by_upi: {
-                            name: 'Pay by UPI',
-                            instruments: [
-                                { method: 'upi', flows: ['collect', 'intent', 'qr'] },
-                            ],
-                        },
-                        other: {
-                            name: 'Other Payment Methods',
-                            instruments: [
-                                { method: 'card' },
-                                { method: 'netbanking' },
-                                { method: 'wallet' },
-                            ],
-                        },
-                    },
-                    sequence: ['block.pay_by_upi', 'block.other'],
-                    preferences: { show_default_blocks: false },
-                },
             },
             handler: async (response) => {
                 const verify = await apiFetch('/payments/verify-assignment-payment', {
