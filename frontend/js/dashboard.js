@@ -570,41 +570,103 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // ── Posting Fee Flow (₹9 — Razorpay Payment Button) ─────────────────────
+    // ── Posting Fee Flow (₹9 — Razorpay Standard Checkout) ──────────────────
     window.openPostingFeeModal = (requestId) => {
         _activeRequestId = requestId;
-        const hiddenField = document.getElementById('postingFeeRequestId');
-        if (hiddenField) hiddenField.value = requestId;
+        const btn = document.getElementById('payPostingFeeBtn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Pay ₹9 & Publish'; }
         document.getElementById('postingFeeModal').style.display = 'flex';
     };
 
-    // Intercept Payment Button form submit — Razorpay populates the form with payment data
-    document.addEventListener('submit', async (e) => {
-        if (e.target.id !== 'postingFeePaymentForm') return;
-        e.preventDefault();
+    window.startPostingFeePayment = async () => {
+        if (!_activeRequestId) return;
+        const btn = document.getElementById('payPostingFeeBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Opening payment...'; }
 
-        const data = new FormData(e.target);
-        const payload = {
-            razorpay_payment_id:                   data.get('razorpay_payment_id') || '',
-            razorpay_payment_link_id:              data.get('razorpay_payment_link_id') || '',
-            razorpay_payment_link_reference_id:    data.get('razorpay_payment_link_reference_id') || '',
-            razorpay_signature:                    data.get('razorpay_signature') || '',
-            request_id:                            _activeRequestId || '',
-        };
-
-        document.getElementById('postingFeeModal').style.display = 'none';
-
-        const verify = await apiFetch('/payments/verify-button-posting-fee', {
+        // Step 1: create a ₹9 Razorpay order on the backend
+        const order = await apiFetch('/payments/create-posting-fee-order', {
             method: 'POST',
-            body: payload,
+            body: { request_id: _activeRequestId },
         });
 
-        if (verify && verify.success) {
-            showSuccessModal('Assignment Published!', 'Your assignment is now live. Helpers can see and accept it.', '🚀');
-        } else {
-            alert('Payment verification failed. Please contact support.');
+        if (!order) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Pay ₹9 & Publish'; }
+            alert('Could not create payment order. Please try again.');
+            return;
         }
-    });
+
+        // Step 2: fetch Razorpay key_id
+        const config = await apiFetch('/payments/config');
+        const keyId = config?.key_id || '';
+
+        // Step 3: open Standard Checkout
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const rzp = new Razorpay({
+            key: keyId,
+            amount: order.amount,
+            currency: order.currency,
+            name: 'AcadMate',
+            description: 'Assignment Listing Fee — ₹9',
+            order_id: order.razorpay_order_id,
+            prefill: {
+                name:    user.name    || '',
+                email:   user.email   || '',
+                contact: user.phone_number || '',
+                method:  'upi',
+            },
+            // Show UPI ID (collect) + QR + card/netbanking — UPI ID entry is highlighted first
+            config: {
+                display: {
+                    blocks: {
+                        pay_by_upi: {
+                            name: 'Pay by UPI',
+                            instruments: [
+                                // collect = user types their UPI ID (most reliable in browser)
+                                { method: 'upi', flows: ['collect', 'intent', 'qr'] },
+                            ],
+                        },
+                        other: {
+                            name: 'Other Payment Methods',
+                            instruments: [
+                                { method: 'card' },
+                                { method: 'netbanking' },
+                                { method: 'wallet' },
+                            ],
+                        },
+                    },
+                    sequence: ['block.pay_by_upi', 'block.other'],
+                    preferences: { show_default_blocks: false },
+                },
+            },
+            theme: { color: '#4f46e5' },
+            handler: async (response) => {
+                // Step 4: verify payment on backend
+                document.getElementById('postingFeeModal').style.display = 'none';
+                const verify = await apiFetch('/payments/verify-posting-fee', {
+                    method: 'POST',
+                    body: {
+                        razorpay_order_id:   response.razorpay_order_id,
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_signature:  response.razorpay_signature,
+                        request_id:          _activeRequestId,
+                    },
+                });
+                if (verify && verify.success) {
+                    showSuccessModal('Assignment Published!', 'Your assignment is now live. Helpers can see and accept it.', '🚀');
+                    fetchStudentData();
+                } else {
+                    alert('Payment verification failed. Contact support if ₹9 was deducted.');
+                }
+            },
+            modal: {
+                escape: false,
+                ondismiss: () => {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Pay ₹9 & Publish'; }
+                },
+            },
+        });
+        rzp.open();
+    };
 
     // ── Submit Work Flow (helper) ─────────────────────────────────────────────
     window.openSubmitWorkModal = (requestId) => {
@@ -669,6 +731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.getElementById('payForWorkModal').style.display = 'none';
 
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
         const rzp = new Razorpay({
             key: config.key_id,
             amount: order.amount,
@@ -676,13 +739,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             name: 'AcadMate',
             description: 'Assignment: ' + order.request_title,
             order_id: order.razorpay_order_id,
+            prefill: {
+                name:    user.name    || '',
+                email:   user.email   || '',
+                contact: user.phone_number || '',
+                method:  'upi',
+            },
+            config: {
+                display: {
+                    blocks: {
+                        pay_by_upi: {
+                            name: 'Pay by UPI',
+                            instruments: [
+                                { method: 'upi', flows: ['collect', 'intent', 'qr'] },
+                            ],
+                        },
+                        other: {
+                            name: 'Other Payment Methods',
+                            instruments: [
+                                { method: 'card' },
+                                { method: 'netbanking' },
+                                { method: 'wallet' },
+                            ],
+                        },
+                    },
+                    sequence: ['block.pay_by_upi', 'block.other'],
+                    preferences: { show_default_blocks: false },
+                },
+            },
             handler: async (response) => {
                 const verify = await apiFetch('/payments/verify-assignment-payment', {
                     method: 'POST',
                     body: {
-                        razorpay_order_id: response.razorpay_order_id,
+                        razorpay_order_id:   response.razorpay_order_id,
                         razorpay_payment_id: response.razorpay_payment_id,
-                        razorpay_signature: response.razorpay_signature,
+                        razorpay_signature:  response.razorpay_signature,
+                        request_id:          _activeRequestId,
                     }
                 });
                 if (verify && verify.success) {
@@ -691,11 +783,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         'Payment of ₹' + verify.amount_paid + ' confirmed. Your assignment is ready to download!',
                         '✅'
                     );
+                    fetchStudentData();
                 } else {
                     alert('Payment verification failed. Please contact support.');
                 }
             },
-            modal: { ondismiss: () => {} },
+            modal: { escape: false, ondismiss: () => {} },
             theme: { color: '#10b981' }
         });
         rzp.open();
