@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 import os
 import socketio
 
@@ -22,7 +23,8 @@ from routers import (
 
 
 def _ensure_runtime_directories() -> None:
-    os.makedirs("uploads/chat", exist_ok=True)
+    for d in ("uploads/chat", "uploads/work", "uploads/attachments"):
+        os.makedirs(d, exist_ok=True)
 
 
 async def _create_default_admins() -> None:
@@ -82,13 +84,14 @@ fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://acadmate-xi.vercel.app",
+        "https://assignment-app1-gdya.onrender.com",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
         "http://localhost:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*\.(vercel\.app|onrender\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,9 +109,9 @@ fastapi_app.include_router(notifications_router.router, prefix="/api/v1")
 fastapi_app.include_router(payments_router.payments_router, prefix="/api/v1")
 
 
-@fastapi_app.api_route("/", methods=["GET", "HEAD", "OPTIONS"])
+@fastapi_app.api_route("/", methods=["GET", "HEAD"])
 async def read_root():
-    return {"message": "Welcome to AcadMate API", "status": "running"}
+    return RedirectResponse(url="/static/index.html")
 
 
 @fastapi_app.api_route("/healthz", methods=["GET", "HEAD", "OPTIONS"])

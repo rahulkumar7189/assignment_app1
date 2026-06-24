@@ -15,20 +15,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     // State for active payment / submission flows
     let _activeRequestId = null;
 
+    // ── Loading Overlay ───────────────────────────────────────────────────────
+    function showLoader(msg) {
+        let overlay = document.getElementById('_appLoader');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = '_appLoader';
+            overlay.style.cssText = 'position:fixed;inset:0;background:#f8fafc;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.25rem;';
+            overlay.innerHTML = `
+                <div style="width:48px;height:48px;border:4px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:_spin 0.8s linear infinite;"></div>
+                <p id="_loaderMsg" style="color:#475569;font-size:0.95rem;font-weight:500;text-align:center;max-width:280px;line-height:1.5;">${msg}</p>
+                <style>@keyframes _spin{to{transform:rotate(360deg)}}</style>`;
+            document.body.appendChild(overlay);
+        } else {
+            document.getElementById('_loaderMsg').textContent = msg;
+        }
+    }
+    function hideLoader() {
+        const el = document.getElementById('_appLoader');
+        if (el) { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }
+    }
+
     // ── Session Validation ────────────────────────────────────────────────────
     async function validateSession() {
-        const userStr = localStorage.getItem('user');
         const token = localStorage.getItem('access_token');
-        if (!userStr || !token) { window.location.href = 'login.html'; return; }
+        if (!token) { window.location.href = 'login.html'; return; }
 
-        try {
-            const verifiedUser = await apiFetch('/users/me');
-            if (!verifiedUser) return;
+        const cachedUser = (() => { try { const s = localStorage.getItem('user'); return s ? JSON.parse(s) : null; } catch { return null; } })();
+
+        if (cachedUser) {
+            // Render immediately from cache — no blank page, no cold-start wait
+            setupDashboard(cachedUser);
+            // Silently re-validate in background
+            _backgroundValidate();
+        } else {
+            // No cached user: show loader and wait for server
+            showLoader('Connecting to AcadMate...');
+            const t1 = setTimeout(() => { const m = document.getElementById('_loaderMsg'); if (m) m.textContent = 'Server is waking up — this may take up to 30 seconds on first load...'; }, 6000);
+            const t2 = setTimeout(() => { const m = document.getElementById('_loaderMsg'); if (m) m.textContent = 'Almost there... hang tight!'; }, 22000);
+            const verifiedUser = await apiFetchWithRetry('/users/me', 3);
+            clearTimeout(t1); clearTimeout(t2);
+            if (!verifiedUser) { window.location.href = 'login.html'; return; }
             localStorage.setItem('user', JSON.stringify(verifiedUser));
+            hideLoader();
             setupDashboard(verifiedUser);
-        } catch (err) {
+        }
+    }
+
+    async function _backgroundValidate() {
+        const fresh = await apiFetch('/users/me');
+        if (fresh) {
+            localStorage.setItem('user', JSON.stringify(fresh));
+        } else if (!localStorage.getItem('access_token')) {
             window.location.href = 'login.html';
         }
+    }
+
+    async function apiFetchWithRetry(url, retries = 2) {
+        for (let i = 0; i <= retries; i++) {
+            const result = await apiFetch(url);
+            if (result) return result;
+            if (i < retries) await new Promise(r => setTimeout(r, 4000));
+        }
+        return null;
     }
 
     // ── API Helper ────────────────────────────────────────────────────────────
@@ -119,6 +168,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         loadNotificationCount();
         notifPollInterval = setInterval(loadNotificationCount, 30000);
+
+        // Keep-alive ping every 10 min so Render free tier doesn't spin down during active sessions
+        setInterval(() => fetch(`${SOCKET_URL}/healthz`).catch(() => {}), 10 * 60 * 1000);
     }
 
     async function joinAllChatRooms() {

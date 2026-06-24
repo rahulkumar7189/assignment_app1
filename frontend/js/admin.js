@@ -28,6 +28,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     let allDisputes = [];
     let allLogs = [];
 
+    // ── Loading overlay ─────────────────────────────────────────────────────────
+    function showLoader(msg) {
+        let overlay = document.getElementById('_appLoader');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = '_appLoader';
+            overlay.style.cssText = 'position:fixed;inset:0;background:#f8fafc;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.25rem;';
+            overlay.innerHTML = `
+                <div style="width:48px;height:48px;border:4px solid #e2e8f0;border-top-color:#4f46e5;border-radius:50%;animation:_spin 0.8s linear infinite;"></div>
+                <p id="_loaderMsg" style="color:#475569;font-size:0.95rem;font-weight:500;text-align:center;max-width:280px;line-height:1.5;">${msg}</p>
+                <style>@keyframes _spin{to{transform:rotate(360deg)}}</style>`;
+            document.body.appendChild(overlay);
+        } else {
+            document.getElementById('_loaderMsg').textContent = msg;
+        }
+    }
+    function hideLoader() {
+        const el = document.getElementById('_appLoader');
+        if (el) { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }
+    }
+
     // ── API helper ──────────────────────────────────────────────────────────────
     async function apiFetch(path, options = {}) {
         let token = localStorage.getItem('access_token');
@@ -40,27 +61,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
 
-        let res = await fetch(`${API_URL}${path}`, opts);
+        try {
+            let res = await fetch(`${API_URL}${path}`, opts);
 
-        if (res.status === 401) {
-            const ok = await attemptTokenRefresh();
-            if (ok) {
-                opts.headers['Authorization'] = `Bearer ${localStorage.getItem('access_token')}`;
-                res = await fetch(`${API_URL}${path}`, opts);
-            } else {
-                localStorage.removeItem('access_token');
-                window.location.href = 'login.html';
+            if (res.status === 401) {
+                const ok = await attemptTokenRefresh();
+                if (ok) {
+                    opts.headers['Authorization'] = `Bearer ${localStorage.getItem('access_token')}`;
+                    res = await fetch(`${API_URL}${path}`, opts);
+                } else {
+                    localStorage.removeItem('access_token');
+                    window.location.href = 'login.html';
+                    return null;
+                }
+            }
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                console.error(`API ${path}:`, err.detail || res.statusText);
                 return null;
             }
-        }
 
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            console.error(`API ${path}:`, err.detail || res.statusText);
+            return res.json();
+        } catch (err) {
+            console.error(`Network error (${path}):`, err.message);
             return null;
         }
-
-        return res.json();
     }
 
     async function attemptTokenRefresh() {
@@ -80,13 +106,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const token = localStorage.getItem('access_token');
         if (!token) { window.location.href = 'login.html'; return; }
 
+        showLoader('Connecting to admin panel...');
+        const t1 = setTimeout(() => { const m = document.getElementById('_loaderMsg'); if (m) m.textContent = 'Server is waking up — please wait...'; }, 6000);
+        const t2 = setTimeout(() => { const m = document.getElementById('_loaderMsg'); if (m) m.textContent = 'Almost there...'; }, 22000);
+
         const user = await apiFetch('/users/me');
+        clearTimeout(t1); clearTimeout(t2);
+
         if (!user || user.role !== 'admin') {
             localStorage.removeItem('access_token');
             window.location.href = 'login.html';
             return;
         }
         document.getElementById('adminName').textContent = user.name;
+        hideLoader();
         setupDashboard();
     }
 
@@ -129,6 +162,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.removeItem('access_token');
             window.location.href = 'login.html';
         });
+
+        // Keep-alive ping every 10 min so Render free tier doesn't spin down during active sessions
+        setInterval(() => fetch(`${API_BASE}/healthz`).catch(() => {}), 10 * 60 * 1000);
 
         document.getElementById('darkModeToggle')?.addEventListener('change', e => {
             document.body.classList.toggle('dark-mode', e.target.checked);

@@ -1,5 +1,9 @@
 const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_URL = IS_LOCAL ? 'http://localhost:8000/api/v1' : 'https://assignment-app1-gdya.onrender.com/api/v1';
+const _HEALTH_URL = IS_LOCAL ? 'http://localhost:8000/healthz' : 'https://assignment-app1-gdya.onrender.com/healthz';
+
+// Wake up the Render server immediately when any page loads (prevents cold-start on first API call)
+fetch(_HEALTH_URL).catch(() => {});
 
 // Redirect logged-in users away from auth pages
 const currentPath = window.location.pathname;
