@@ -575,6 +575,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         _activeRequestId = requestId;
         const btn = document.getElementById('payPostingFeeBtn');
         if (btn) { btn.disabled = false; btn.textContent = 'Pay ₹9 & Publish'; }
+        const upiInput = document.getElementById('postingFeeUpiId');
+        if (upiInput) upiInput.value = '';
         document.getElementById('postingFeeModal').style.display = 'flex';
     };
 
@@ -601,6 +603,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Step 3: open Standard Checkout
         const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const upiId = (document.getElementById('postingFeeUpiId')?.value || '').trim();
+        const prefill = {
+            name:    user.name    || '',
+            email:   user.email   || '',
+            contact: user.phone_number || '',
+        };
+        // If user entered a UPI ID, pre-fill it — Razorpay opens directly in collect mode (no QR)
+        if (upiId && upiId.includes('@')) {
+            prefill.method = 'upi';
+            prefill.vpa    = upiId;
+        }
         const rzp = new Razorpay({
             key: keyId,
             amount: order.amount,
@@ -608,11 +621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             name: 'AcadMate',
             description: 'Assignment Listing Fee — ₹9',
             order_id: order.razorpay_order_id,
-            prefill: {
-                name:    user.name    || '',
-                email:   user.email   || '',
-                contact: user.phone_number || '',
-            },
+            prefill,
             theme: { color: '#4f46e5' },
             handler: async (response) => {
                 // Step 4: verify payment on backend
