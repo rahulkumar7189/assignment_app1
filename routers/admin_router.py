@@ -324,14 +324,12 @@ async def get_work_queue(current_user: models.User = Depends(auth.get_current_ad
 @admin_router.get("/work/{request_id}/preview")
 async def preview_work_file(request_id: str, current_user: models.User = Depends(auth.get_current_admin)):
     """Returns the submitted work file for admin review."""
-    from fastapi.responses import FileResponse
     auth.check_role(current_user, ["admin"])
     req = await models.HelpRequest.find_one(models.HelpRequest.id == PydanticObjectId(request_id))
     if not req or not req.work_file:
         raise HTTPException(status_code=404, detail="No work file found")
-    if not os.path.exists(req.work_file):
-        raise HTTPException(status_code=404, detail="Work file missing from server")
-    return FileResponse(path=req.work_file, filename=os.path.basename(req.work_file))
+    from routers.requests_router import _stream_work_file
+    return await _stream_work_file(req)
 
 
 @admin_router.put("/requests/{request_id}/verify-work")

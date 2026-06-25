@@ -1,16 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from typing import List, Optional
 import models, schemas, auth, utils
 from routers.notifications_router import create_notification
 from beanie.odm.fields import PydanticObjectId
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from bson import ObjectId
 from datetime import datetime
-import os, uuid
+import os, uuid, io
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
 WORK_UPLOAD_DIR = os.path.join("uploads", "work")
 os.makedirs(WORK_UPLOAD_DIR, exist_ok=True)
+
+
+def _gridfs_bucket() -> AsyncIOMotorGridFSBucket:
+    """Return a GridFS bucket from the live Motor client."""
+    import database
+    db = database.motor_client[os.getenv("MONGO_DB_NAME", "acadmate")]
+    return AsyncIOMotorGridFSBucket(db, bucket_name="work_files")
 
 
 @router.post("/", response_model=schemas.HelpRequestOut)
@@ -148,17 +157,23 @@ async def submit_work(
     if req.status not in ("in_progress", "work_submitted"):
         raise HTTPException(status_code=400, detail="Work can only be submitted while the request is in progress")
 
-    # Save work file to uploads/work/{request_id}/
-    req_work_dir = os.path.join(WORK_UPLOAD_DIR, request_id)
-    os.makedirs(req_work_dir, exist_ok=True)
-
-    file_ext = os.path.splitext(file.filename)[1]
-    file_name = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(req_work_dir, file_name)
-    with open(file_path, "wb") as buffer:
-        buffer.write(await file.read())
-
-    req.work_file = file_path
+    # Upload file to MongoDB GridFS — survives server restarts on Render
+    file_data = await file.read()
+    original_filename = file.filename or f"work{os.path.splitext(file.filename or '')[1]}"
+    bucket = _gridfs_bucket()
+    # Delete previous GridFS file for this request if it exists
+    if req.work_file and req.work_file.startswith("gridfs:"):
+        try:
+            old_id = ObjectId(req.work_file[7:])
+            await bucket.delete(old_id)
+        except Exception:
+            pass
+    file_id = await bucket.upload_from_stream(
+        original_filename,
+        io.BytesIO(file_data),
+        metadata={"request_id": request_id, "content_type": file.content_type or "application/octet-stream"},
+    )
+    req.work_file = f"gridfs:{str(file_id)}"
     req.work_submitted_at = datetime.utcnow()
     req.status = "work_submitted"
     req.work_verified = False
@@ -189,15 +204,37 @@ async def download_work(request_id: str, current_user: models.User = Depends(aut
     if req.student_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your request")
     if req.status != "completed":
-        raise HTTPException(status_code=403, detail="Payment must be completed before downloading the work")
-    if not req.work_file or not os.path.exists(req.work_file):
+        raise HTTPException(status_code=403, detail="Payment must be completed before downloading")
+    if not req.work_file:
         raise HTTPException(status_code=404, detail="Work file not found")
 
-    return FileResponse(
-        path=req.work_file,
-        filename=os.path.basename(req.work_file),
-        media_type="application/octet-stream",
-    )
+    return await _stream_work_file(req)
+
+
+async def _stream_work_file(req: models.HelpRequest):
+    """Stream the work file from GridFS (or local disk as fallback)."""
+    if req.work_file and req.work_file.startswith("gridfs:"):
+        file_id = ObjectId(req.work_file[7:])
+        bucket = _gridfs_bucket()
+        try:
+            grid_out = await bucket.open_download_stream(file_id)
+        except Exception:
+            raise HTTPException(status_code=404, detail="Work file not found in storage")
+        filename = grid_out.filename or "assignment"
+        data = await grid_out.read()
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    # Fallback: legacy local-filesystem path (pre-migration uploads)
+    if req.work_file and os.path.exists(req.work_file):
+        return FileResponse(
+            path=req.work_file,
+            filename=os.path.basename(req.work_file),
+            media_type="application/octet-stream",
+        )
+    raise HTTPException(status_code=404, detail="Work file not found")
 
 
 @router.put("/{request_id}/cancel")
