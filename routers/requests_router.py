@@ -154,12 +154,13 @@ async def submit_work(
         raise HTTPException(status_code=404, detail="Request not found")
     if req.helper_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not the helper for this request")
-    if req.status not in ("in_progress", "work_submitted"):
+    is_recovery = req.status in ("awaiting_payment", "completed")
+    if req.status not in ("in_progress", "work_submitted", "awaiting_payment", "completed"):
         raise HTTPException(status_code=400, detail="Work can only be submitted while the request is in progress")
 
     # Upload file to MongoDB GridFS — survives server restarts on Render
     file_data = await file.read()
-    original_filename = file.filename or f"work{os.path.splitext(file.filename or '')[1]}"
+    original_filename = file.filename or "work_file"
     bucket = _gridfs_bucket()
     # Delete previous GridFS file for this request if it exists
     if req.work_file and req.work_file.startswith("gridfs:"):
@@ -174,6 +175,12 @@ async def submit_work(
         metadata={"request_id": request_id, "content_type": file.content_type or "application/octet-stream"},
     )
     req.work_file = f"gridfs:{str(file_id)}"
+
+    if is_recovery:
+        # File recovery re-upload: don't reset status or verification for approved/completed work
+        await req.save()
+        return {"message": "File re-uploaded successfully. The student can now download it."}
+
     req.work_submitted_at = datetime.utcnow()
     req.status = "work_submitted"
     req.work_verified = False

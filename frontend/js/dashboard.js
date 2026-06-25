@@ -354,12 +354,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'awaiting_payment':
                 return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
                     <i class="fas fa-hourglass-half"></i> Work approved! Waiting for student to pay. You'll be paid automatically.
-                </div>`;
+                </div>
+                <button onclick="openSubmitWorkModal('${req.id}')" class="btn btn-outline" style="width:100%;margin-top:0.5rem;font-size:0.8rem;">
+                    <i class="fas fa-upload"></i> Re-upload File (if lost)
+                </button>`;
 
             case 'completed':
                 return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
                     <i class="fas fa-rupee-sign"></i> Payment received! Your share (90%) is being transferred to your UPI ID.
-                </div>`;
+                </div>
+                <button onclick="openSubmitWorkModal('${req.id}')" class="btn btn-outline" style="width:100%;margin-top:0.5rem;font-size:0.8rem;">
+                    <i class="fas fa-upload"></i> Re-upload File (if student can't download)
+                </button>`;
 
             default:
                 return '';
@@ -755,7 +761,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) {
-                alert('Download failed. Please try again or contact support.');
+                if (response.status === 404) {
+                    alert('File not available yet. The helper may need to re-upload it — this can happen after a server restart. Please wait a few minutes and try again, or contact support if it persists.');
+                } else {
+                    alert('Download failed. Please try again or contact support.');
+                }
                 return;
             }
             const contentDisposition = response.headers.get('content-disposition') || '';

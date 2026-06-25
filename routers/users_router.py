@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from bson import ObjectId
 import models, schemas, auth
+import database
 
 router = APIRouter(tags=["users"])
 
@@ -13,6 +14,10 @@ async def get_me(current_user: models.User = Depends(auth.get_current_user)):
 @router.get("/me/stats")
 async def get_my_stats(current_user: models.User = Depends(auth.get_current_user)):
     uid = ObjectId(str(current_user.id))
+
+    import os
+    db = database.motor_client[os.getenv("MONGO_DB_NAME", "acadmate")]
+    col = db["help_requests"]
 
     if current_user.role == "student":
         total_requests = await models.HelpRequest.find(
@@ -30,7 +35,7 @@ async def get_my_stats(current_user: models.User = Depends(auth.get_current_user
             {"$match": {"student_id": uid, "status": "completed"}},
             {"$group": {"_id": None, "total": {"$sum": "$budget"}}},
         ]
-        result = await models.HelpRequest.aggregate(pipeline).to_list()
+        result = await col.aggregate(pipeline).to_list(length=None)
         spent = result[0]["total"] if result else 0.0
         return {
             "total_requests": total_requests,
@@ -55,7 +60,7 @@ async def get_my_stats(current_user: models.User = Depends(auth.get_current_user
             {"$match": {"helper_id": uid, "status": "completed"}},
             {"$group": {"_id": None, "total": {"$sum": "$budget"}}},
         ]
-        result = await models.HelpRequest.aggregate(pipeline).to_list()
+        result = await col.aggregate(pipeline).to_list(length=None)
         earned = result[0]["total"] if result else 0.0
         return {
             "total_requests": total_requests,
