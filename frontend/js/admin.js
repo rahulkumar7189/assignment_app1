@@ -229,11 +229,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Submitted:</strong> ${submitted}</p>
                 ${req.work_rejected_reason ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:0.4rem;padding:0.5rem 0.75rem;margin:0.5rem 0;font-size:0.78rem;color:#991b1b;">Previous rejection: ${req.work_rejected_reason}</div>` : ''}
                 <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem;">
-                    <a href="${API_BASE}/api/v1/admin/work/${req.id}/preview"
-                       target="_blank"
-                       style="display:block;text-align:center;padding:0.6rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.5rem;font-size:0.85rem;font-weight:600;text-decoration:none;">
+                    <button onclick="window.previewWorkFile('${req.id}')"
+                            style="width:100%;padding:0.6rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
                         <i class="fas fa-file-alt"></i> View Submitted File
-                    </a>
+                    </button>
                     <div style="display:flex;gap:0.5rem;">
                         <button onclick="verifyWork('${req.id}', 'approve')"
                                 style="flex:1;padding:0.6rem;background:#10b981;color:#fff;border:none;border-radius:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
@@ -256,6 +255,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (count > 0) { badge.textContent = count; badge.style.display = 'inline'; }
         else badge.style.display = 'none';
     }
+
+    window.previewWorkFile = async (requestId) => {
+        const btn = event?.target?.closest('button');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...'; }
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_URL}/admin/work/${requestId}/preview`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) {
+                alert('Could not load file. It may have been deleted.');
+                return;
+            }
+            const contentDisposition = response.headers.get('content-disposition') || '';
+            const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            const filename = filenameMatch ? filenameMatch[1].replace(/['"]/g, '') : 'work_file';
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } catch (err) {
+            alert('Failed to load file. Please try again.');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-file-alt"></i> View Submitted File'; }
+        }
+    };
 
     window.verifyWork = async (requestId, action, reason) => {
         const body = { action };
@@ -446,21 +477,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             const student = escHtml(r.student_name || `#${r.student_id}`);
             const helper = r.helper_name ? escHtml(r.helper_name) : '<span style="color:#94a3b8">Unassigned</span>';
             const urgent = r.is_urgent_print ? '<i class="fas fa-bolt" title="Urgent Print" style="color:#f59e0b;margin-left:4px;"></i>' : '';
+            const rid = escHtml(r.id);
             return `<tr>
-                <td>${r.id}</td>
+                <td><small>${rid}</small></td>
                 <td><strong>${escHtml(r.title)}</strong>${urgent}</td>
                 <td>${escHtml(r.subject)}</td>
                 <td>${student}</td>
                 <td>${helper}</td>
                 <td style="font-weight:600;color:#059669;">${budget}</td>
                 <td><small>${deadline}</small></td>
-                <td><span class="badge status-${r.status}">${r.status.replace('_',' ')}</span></td>
+                <td><span class="badge status-${r.status}">${r.status.replace(/_/g,' ')}</span></td>
                 <td><small>${posted}</small></td>
                 <td class="action-cell">
-                    <button class="btn btn-sm btn-outline" onclick="showRequestDetails(${r.id})">
+                    <button class="btn btn-sm btn-outline" onclick="showRequestDetails('${rid}')">
                         <i class="fas fa-eye"></i> Details
                     </button>
-                    <button class="btn btn-sm btn-primary" onclick="openChatForRequest(${r.id})">
+                    <button class="btn btn-sm btn-primary" onclick="openChatForRequest('${rid}')">
                         <i class="fas fa-comments"></i> Chat
                     </button>
                 </td>
@@ -480,42 +512,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.showRequestDetails = async (id) => {
-        const r = allRequests.find(x => x.id === id);
-        if (!r) return;
-        const milestones = await apiFetch(`/requests/${id}/milestones`) || [];
-        const msHtml = milestones.length
-            ? milestones.map(m => `<tr>
-                <td>${escHtml(m.description)}</td>
-                <td>₹${m.amount}</td>
-                <td><span class="badge status-${m.status === 'paid' ? 'completed' : 'open'}">${m.status}</span></td>
-              </tr>`).join('')
-            : '<tr><td colspan="3" style="text-align:center;color:#94a3b8;">No milestones</td></tr>';
+        const r = allRequests.find(x => String(x.id) === String(id));
+        if (!r) { alert('Request not found. Please reload the page.'); return; }
 
-        openModal(`Request #${r.id} — ${escHtml(r.title)}`, `
+        const attachHtml = r.attachments && r.attachments.length
+            ? r.attachments.map(a => `<a href="${API_BASE}${a}" target="_blank" style="display:inline-block;margin-right:0.5rem;color:#4f46e5;font-size:0.82rem;"><i class="fas fa-paperclip"></i> ${a.split('/').pop()}</a>`).join('')
+            : '<span style="color:#94a3b8;font-size:0.82rem;">No attachments</span>';
+
+        const rid = escHtml(String(r.id));
+        openModal(`${escHtml(r.title)}`, `
             <div class="detail-grid">
                 <div class="detail-row"><span class="dl">Subject</span><span class="dv">${escHtml(r.subject)}</span></div>
-                <div class="detail-row"><span class="dl">Status</span><span class="dv"><span class="badge status-${r.status}">${r.status.replace('_',' ')}</span></span></div>
+                <div class="detail-row"><span class="dl">Status</span><span class="dv"><span class="badge status-${r.status}">${r.status.replace(/_/g,' ')}</span></span></div>
+                <div class="detail-row"><span class="dl">Posting Fee Paid</span><span class="dv">${r.posting_fee_paid ? '✅ Yes' : '❌ No'}</span></div>
                 <div class="detail-row"><span class="dl">Student</span><span class="dv">${escHtml(r.student_name || `#${r.student_id}`)}</span></div>
                 <div class="detail-row"><span class="dl">Helper</span><span class="dv">${escHtml(r.helper_name || 'Unassigned')}</span></div>
                 <div class="detail-row"><span class="dl">Budget</span><span class="dv">${r.budget ? '₹' + r.budget : '—'}</span></div>
                 <div class="detail-row"><span class="dl">Deadline</span><span class="dv">${new Date(r.deadline).toLocaleString('en-IN')}</span></div>
                 <div class="detail-row"><span class="dl">Posted</span><span class="dv">${new Date(r.created_at).toLocaleString('en-IN')}</span></div>
-                <div class="detail-row"><span class="dl">Contact Unlocked</span><span class="dv">${r.contact_unlocked ? '✅ Yes' : '❌ No'}</span></div>
+                <div class="detail-row"><span class="dl">Work Verified</span><span class="dv">${r.work_verified ? '✅ Yes' : '❌ No'}</span></div>
+                <div class="detail-row"><span class="dl">Payout Initiated</span><span class="dv">${r.payout_initiated ? '✅ Yes' : '❌ No'}</span></div>
                 <div class="detail-row"><span class="dl">Urgent Print</span><span class="dv">${r.is_urgent_print ? '⚡ Yes' : 'No'}</span></div>
             </div>
             <div class="detail-section">
                 <h4>Description</h4>
-                <p style="white-space:pre-wrap;color:#475569;">${escHtml(r.description)}</p>
+                <p style="white-space:pre-wrap;color:#475569;font-size:0.88rem;">${escHtml(r.description || '—')}</p>
             </div>
             <div class="detail-section">
-                <h4>Milestones</h4>
-                <table class="admin-table" style="margin-top:0.5rem;">
-                    <thead><tr><th>Description</th><th>Amount</th><th>Status</th></tr></thead>
-                    <tbody>${msHtml}</tbody>
-                </table>
+                <h4>Attachments</h4>
+                <div style="margin-top:0.4rem;">${attachHtml}</div>
             </div>
-            <div style="margin-top:1rem;">
-                <button class="btn btn-primary" onclick="closeModal(); openChatForRequest(${r.id})"><i class="fas fa-comments"></i> View Chat</button>
+            ${r.work_rejected_reason ? `<div class="detail-section"><h4>Rejection Reason</h4><p style="color:#991b1b;font-size:0.85rem;">${escHtml(r.work_rejected_reason)}</p></div>` : ''}
+            <div style="margin-top:1.25rem;">
+                <button class="btn btn-primary" onclick="closeModal(); openChatForRequest('${rid}')">
+                    <i class="fas fa-comments"></i> View Chat
+                </button>
             </div>
         `);
     };
@@ -533,19 +564,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         const el = document.getElementById('chatRequestList');
         if (!el) return;
         if (!reqs.length) { el.innerHTML = '<p style="padding:1rem;color:#94a3b8;">No conversations found.</p>'; return; }
-        el.innerHTML = reqs.map(r => `
-            <div class="chat-list-item" data-id="${r.id}" data-status="${r.status}" onclick="openRequestChat(${r.id})">
+        el.innerHTML = reqs.map(r => {
+            const rid = escHtml(String(r.id));
+            return `
+            <div class="chat-list-item" data-id="${rid}" data-status="${r.status}" onclick="openRequestChat('${rid}')">
                 <div class="chat-item-top">
                     <span class="chat-item-title">${escHtml(r.title)}</span>
-                    <span class="badge status-${r.status}" style="font-size:0.65rem;">${r.status.replace('_',' ')}</span>
+                    <span class="badge status-${r.status}" style="font-size:0.65rem;">${r.status.replace(/_/g,' ')}</span>
                 </div>
                 <div class="chat-item-meta">
                     <i class="fas fa-user"></i> ${escHtml(r.student_name || `Student #${r.student_id}`)}
-                    ${r.helper_name ? ` → <i class="fas fa-user-graduate"></i> ${escHtml(r.helper_name)}` : ''}
+                    ${r.helper_name ? ` <i class="fas fa-arrow-right" style="font-size:0.65rem;color:#94a3b8;"></i> <i class="fas fa-user-graduate"></i> ${escHtml(r.helper_name)}` : ''}
                 </div>
                 <div class="chat-item-sub">${escHtml(r.subject)}</div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     }
 
     window.filterChatList = function () {
@@ -561,7 +594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.openChatForRequest = (id) => {
         switchToSection('chats');
-        setTimeout(() => openRequestChat(id), 300);
+        setTimeout(() => window.openRequestChat(String(id)), 350);
     };
 
     window.switchToSection = function (id) {
@@ -579,8 +612,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.openRequestChat = async (id) => {
-        const r = allRequests.find(x => x.id === id);
-        if (!r) return;
+        const r = allRequests.find(x => String(x.id) === String(id));
+        if (!r) { alert('Request not found. Please reload the page.'); return; }
 
         document.querySelectorAll('.chat-list-item').forEach(el => el.classList.remove('active'));
         document.querySelector(`.chat-list-item[data-id="${id}"]`)?.classList.add('active');
@@ -590,28 +623,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         header.style.display = 'flex';
         document.getElementById('chatRequestTitle').textContent = r.title;
         document.getElementById('chatRequestMeta').textContent =
-            `${r.student_name || `Student #${r.student_id}`} → ${r.helper_name || 'Unassigned'}  |  Subject: ${r.subject}  |  Budget: ${r.budget ? '₹' + r.budget : 'N/A'}`;
+            `${r.student_name || `Student #${r.student_id}`} → ${r.helper_name || 'No helper yet'}  |  ${r.subject}  |  ₹${r.budget || 'N/A'}`;
         const statusEl = document.getElementById('chatRequestStatus');
         statusEl.className = `badge status-${r.status}`;
-        statusEl.textContent = r.status.replace('_', ' ');
+        statusEl.textContent = r.status.replace(/_/g, ' ');
 
         const msgEl = document.getElementById('chatMessages');
         msgEl.innerHTML = '<div style="text-align:center;padding:2rem;color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i> Loading messages...</div>';
 
         const messages = await apiFetch(`/admin/chats/${id}`);
         if (!messages || !messages.length) {
-            msgEl.innerHTML = '<div class="no-messages"><i class="fas fa-comment-slash"></i><p>No messages yet in this chat</p></div>';
+            msgEl.innerHTML = `
+                <div style="text-align:center;padding:3rem 1.5rem;color:#94a3b8;">
+                    <i class="fas fa-comment-slash" style="font-size:2rem;margin-bottom:0.75rem;display:block;"></i>
+                    <p style="font-size:0.9rem;">No chat has been done between these users yet.</p>
+                </div>`;
             return;
         }
 
-        const studentId = r.student_id;
-        const helperId = r.helper_id;
-
         msgEl.innerHTML = messages.map(msg => {
-            const isStudent = msg.sender_id === studentId;
+            const isStudent = String(msg.sender_id) === String(r.student_id);
             const senderName = isStudent
-                ? (r.student_name || `Student #${msg.sender_id}`)
-                : (r.helper_name || `Helper #${msg.sender_id}`);
+                ? (r.student_name || `Student`)
+                : (r.helper_name || `Helper`);
             const time = new Date(msg.timestamp).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
             const attachHtml = msg.attachment
                 ? `<a href="${API_BASE}${msg.attachment}" target="_blank" class="attach-link"><i class="fas fa-paperclip"></i> View Attachment</a>`

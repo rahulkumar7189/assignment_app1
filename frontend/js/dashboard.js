@@ -317,12 +317,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
                         <i class="fas fa-check-circle"></i> Assignment delivered! Download your file below.
                     </div>
-                    <a href="${API_BASE_URL}/requests/${req.id}/download-work"
-                       class="btn btn-primary"
-                       style="width:100%;margin-top:0.75rem;display:block;text-align:center;text-decoration:none;background:#10b981;"
-                       download>
+                    <button onclick="window.downloadWork('${req.id}')"
+                            class="btn btn-primary"
+                            style="width:100%;margin-top:0.75rem;background:#10b981;">
                         <i class="fas fa-download"></i> Download Assignment
-                    </a>`
+                    </button>`
                     : `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:0.5rem;padding:0.75rem;margin-top:0.75rem;font-size:0.82rem;color:#065f46;">
                         <i class="fas fa-check-circle"></i> Completed.
                     </div>`;
@@ -575,8 +574,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         _activeRequestId = requestId;
         const btn = document.getElementById('payPostingFeeBtn');
         if (btn) { btn.disabled = false; btn.textContent = 'Pay ₹9 & Publish'; }
-        const upiInput = document.getElementById('postingFeeUpiId');
-        if (upiInput) upiInput.value = '';
         document.getElementById('postingFeeModal').style.display = 'flex';
     };
 
@@ -603,17 +600,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Step 3: open Standard Checkout
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const upiId = (document.getElementById('postingFeeUpiId')?.value || '').trim();
-        const prefill = {
-            name:    user.name    || '',
-            email:   user.email   || '',
-            contact: user.phone_number || '',
-        };
-        // If user entered a UPI ID, pre-fill it — Razorpay opens directly in collect mode (no QR)
-        if (upiId && upiId.includes('@')) {
-            prefill.method = 'upi';
-            prefill.vpa    = upiId;
-        }
         const rzp = new Razorpay({
             key: keyId,
             amount: order.amount,
@@ -621,7 +607,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             name: 'AcadMate',
             description: 'Assignment Listing Fee — ₹9',
             order_id: order.razorpay_order_id,
-            prefill,
+            prefill: {
+                name:    user.name    || '',
+                email:   user.email   || '',
+                contact: user.phone_number || '',
+            },
             theme: { color: '#4f46e5' },
             handler: async (response) => {
                 // Step 4: verify payment on backend
@@ -753,6 +743,38 @@ document.addEventListener('DOMContentLoaded', async () => {
             theme: { color: '#10b981' }
         });
         rzp.open();
+    };
+
+    // ── Download work (student) — fetch with auth token then save as blob ────
+    window.downloadWork = async (requestId) => {
+        const btn = event?.target?.closest('button');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Downloading...'; }
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE_URL}/requests/${requestId}/download-work`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) {
+                alert('Download failed. Please try again or contact support.');
+                return;
+            }
+            const contentDisposition = response.headers.get('content-disposition') || '';
+            const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            const filename = filenameMatch ? filenameMatch[1].replace(/['"]/g, '') : 'assignment';
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } catch (err) {
+            alert('Download failed. Please try again.');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download"></i> Download Assignment'; }
+        }
     };
 
     // ── Success modal ─────────────────────────────────────────────────────────
