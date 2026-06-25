@@ -225,6 +225,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <span style="background:#fefce8;color:#713f12;border:1px solid #fde047;border-radius:0.4rem;padding:0.2rem 0.6rem;font-size:0.72rem;font-weight:600;white-space:nowrap;">Work Submitted</span>
                 </div>
                 <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Subject:</strong> ${req.subject}</p>
+                <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Student:</strong> ${escHtml(req.student_name || '—')}</p>
+                <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Helper:</strong> ${escHtml(req.helper_name || '—')}</p>
                 <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Budget:</strong> &#8377;${req.budget || '—'}</p>
                 <p style="font-size:0.82rem;color:#64748b;margin:0.25rem 0;"><strong>Submitted:</strong> ${submitted}</p>
                 ${req.work_rejected_reason ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:0.4rem;padding:0.5rem 0.75rem;margin:0.5rem 0;font-size:0.78rem;color:#991b1b;">Previous rejection: ${req.work_rejected_reason}</div>` : ''}
