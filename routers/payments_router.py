@@ -418,16 +418,18 @@ async def admin_orders(current_user: models.User = Depends(auth.get_current_admi
     for o in orders:
         student = await models.User.find_one(models.User.id == o.student_id) if o.student_id else None
         req     = await models.HelpRequest.find_one(models.HelpRequest.id == o.request_id) if o.request_id else None
+        helper  = await models.User.find_one(models.User.id == req.helper_id) if req and req.helper_id else None
         result.append({
             "id": str(o.id),
             "order_type": o.order_type,
             "student_name": student.name if student else "Unknown",
             "student_email": student.email if student else "",
+            "helper_name": helper.name if helper else ("—" if o.order_type == "posting_fee" else "Unknown"),
+            "helper_upi": helper.upi_id if helper else "—",
             "request_title": req.title if req else "Unknown",
             "amount": o.amount,
             "platform_fee": o.platform_fee_amount,
             "helper_payout": o.helper_payout_amount,
-            "razorpay_payout_id": o.razorpay_payout_id,
             "razorpay_payment_id": o.razorpay_payment_id,
             "paid_at": o.paid_at.isoformat() if o.paid_at else None,
         })

@@ -675,7 +675,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tbody = document.getElementById('paymentsTableBody');
         if (!tbody) return;
         if (!payments.length) {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No payments recorded yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No payments recorded yet.</td></tr>';
             return;
         }
         tbody.innerHTML = payments.map(p => {
@@ -688,10 +688,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const payout = p.helper_payout != null ? '₹' + Number(p.helper_payout).toFixed(2) : '—';
             const pid = p.razorpay_payment_id ? `<small style="color:#64748b;">${p.razorpay_payment_id}</small>` : '—';
             const paidAt = p.paid_at ? new Date(p.paid_at).toLocaleString('en-IN') : '—';
+            const helperCell = isPosting
+                ? '<span style="color:#94a3b8;font-size:0.8rem;">Platform (posting fee)</span>'
+                : `<strong>${escHtml(p.helper_name || '—')}</strong>${p.helper_upi && p.helper_upi !== '—' ? `<br><small style="color:#64748b;">${escHtml(p.helper_upi)}</small>` : ''}`;
             return `<tr>
                 <td>${typeBadge}</td>
                 <td><small>${escHtml(p.request_title)}</small></td>
                 <td><strong>${escHtml(p.student_name)}</strong><br><small style="color:#64748b;">${escHtml(p.student_email)}</small></td>
+                <td>${helperCell}</td>
                 <td style="font-weight:700;color:#059669;">${amount}</td>
                 <td>${platform}</td>
                 <td>${payout}</td>
