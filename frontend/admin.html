@@ -317,12 +317,12 @@
                 <section id="payments" class="section">
                     <div class="table-container">
                         <div class="table-header">
-                            <h2><i class="fas fa-robot" style="color:var(--primary,#2563eb);margin-right:0.5rem;"></i>AI Payment Detection</h2>
+                            <h2><i class="fas fa-credit-card" style="color:var(--primary,#2563eb);margin-right:0.5rem;"></i>Payment Logs</h2>
                             <div class="filters">
                                 <select id="paymentStatusFilter" onchange="filterPayments()">
-                                    <option value="">All</option>
-                                    <option value="initiated">Initiated</option>
-                                    <option value="confirmed">Confirmed</option>
+                                    <option value="">All Types</option>
+                                    <option value="posting_fee">Posting Fee (₹9)</option>
+                                    <option value="assignment_payment">Assignment Payment</option>
                                 </select>
                             </div>
                         </div>
@@ -330,19 +330,18 @@
                             <table class="admin-table">
                                 <thead>
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Request</th>
-                                        <th>Sender</th>
-                                        <th>Message</th>
+                                        <th>Type</th>
+                                        <th>Assignment</th>
+                                        <th>Student</th>
                                         <th>Amount</th>
-                                        <th>Status</th>
-                                        <th>Keywords</th>
-                                        <th>Screenshot</th>
-                                        <th>Detected At</th>
+                                        <th>Platform Fee</th>
+                                        <th>Helper Payout</th>
+                                        <th>Razorpay ID</th>
+                                        <th>Paid At</th>
                                     </tr>
                                 </thead>
                                 <tbody id="paymentsTableBody">
-                                    <tr><td colspan="9" class="loading">Loading payment detections...</td></tr>
+                                    <tr><td colspan="8" class="loading">Loading payment logs...</td></tr>
                                 </tbody>
                             </table>
                         </div>

@@ -392,13 +392,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${statusBadge}</td>
                 <td>${pwd}</td>
                 <td class="action-cell">
-                    <button class="btn btn-sm btn-outline" onclick="adminAction('verify',${u.id},${!u.is_verified})" title="${u.is_verified ? 'Unverify' : 'Verify'}">
+                    <button class="btn btn-sm btn-outline" onclick="adminAction('verify','${u.id}',${!u.is_verified})" title="${u.is_verified ? 'Unverify' : 'Verify'}">
                         <i class="fas fa-${u.is_verified ? 'times' : 'check'}"></i> ${u.is_verified ? 'Unverify' : 'Verify'}
                     </button>
-                    <button class="btn btn-sm ${u.is_suspended ? 'btn-success' : 'btn-warning'}" onclick="adminAction('suspend',${u.id},${!u.is_suspended})">
+                    <button class="btn btn-sm ${u.is_suspended ? 'btn-success' : 'btn-warning'}" onclick="adminAction('suspend','${u.id}',${!u.is_suspended})">
                         <i class="fas fa-${u.is_suspended ? 'unlock' : 'ban'}"></i> ${u.is_suspended ? 'Unsuspend' : 'Suspend'}
                     </button>
-                    <button class="btn btn-sm btn-danger" onclick="adminAction('delete',${u.id})">
+                    <button class="btn btn-sm btn-danger" onclick="adminAction('delete','${u.id}')">
                         <i class="fas fa-trash"></i>
                     </button>
                 </td>
@@ -665,7 +665,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ── PAYMENTS ──────────────────────────────────────────────────────────────────
     async function loadPayments() {
-        const data = await apiFetch('/admin/payments/details');
+        const data = await apiFetch('/payments/admin/orders');
         if (!data) return;
         allPayments = data;
         renderPayments(data);
@@ -675,32 +675,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tbody = document.getElementById('paymentsTableBody');
         if (!tbody) return;
         if (!payments.length) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No payment activity detected yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No payments recorded yet.</td></tr>';
             return;
         }
         tbody.innerHTML = payments.map(p => {
-            const statusClass = p.payment_status === 'confirmed' ? 'status-completed' : 'status-in_progress';
-            const screenshot = p.screenshot_url
-                ? `<a href="${API_BASE}${p.screenshot_url}" target="_blank" class="btn btn-sm btn-outline"><i class="fas fa-image"></i></a>`
-                : '—';
-            const msgContent = p.message_content ? escHtml(p.message_content.substring(0, 40)) + (p.message_content.length > 40 ? '…' : '') : '—';
+            const isPosting = p.order_type === 'posting_fee';
+            const typeBadge = isPosting
+                ? '<span class="badge status-open">Posting Fee</span>'
+                : '<span class="badge status-completed">Assignment</span>';
+            const amount = p.amount ? '₹' + Number(p.amount).toLocaleString('en-IN') : '—';
+            const platform = p.platform_fee != null ? '₹' + Number(p.platform_fee).toFixed(2) : '—';
+            const payout = p.helper_payout != null ? '₹' + Number(p.helper_payout).toFixed(2) : '—';
+            const pid = p.razorpay_payment_id ? `<small style="color:#64748b;">${p.razorpay_payment_id}</small>` : '—';
+            const paidAt = p.paid_at ? new Date(p.paid_at).toLocaleString('en-IN') : '—';
             return `<tr>
-                <td>${p.id}</td>
+                <td>${typeBadge}</td>
                 <td><small>${escHtml(p.request_title)}</small></td>
-                <td><strong>${escHtml(p.sender_name)}</strong><br><small style="color:#64748b;">${escHtml(p.sender_email)}</small></td>
-                <td><small style="color:#64748b;">${msgContent}</small></td>
-                <td style="font-weight:700;color:#059669;">${p.detected_amount ? '₹' + p.detected_amount.toLocaleString() : 'N/A'}</td>
-                <td><span class="badge ${statusClass}">${p.payment_status}</span></td>
-                <td><small>${p.detected_keywords || '—'}</small></td>
-                <td>${screenshot}</td>
-                <td><small>${p.detected_at ? new Date(p.detected_at).toLocaleString('en-IN') : ''}</small></td>
+                <td><strong>${escHtml(p.student_name)}</strong><br><small style="color:#64748b;">${escHtml(p.student_email)}</small></td>
+                <td style="font-weight:700;color:#059669;">${amount}</td>
+                <td>${platform}</td>
+                <td>${payout}</td>
+                <td>${pid}</td>
+                <td><small>${paidAt}</small></td>
             </tr>`;
         }).join('');
     }
 
     window.filterPayments = function () {
-        const status = document.getElementById('paymentStatusFilter')?.value || '';
-        renderPayments(status ? allPayments.filter(p => p.payment_status === status) : allPayments);
+        const type = document.getElementById('paymentStatusFilter')?.value || '';
+        renderPayments(type ? allPayments.filter(p => p.order_type === type) : allPayments);
     };
 
     // ── DISPUTES ──────────────────────────────────────────────────────────────────
